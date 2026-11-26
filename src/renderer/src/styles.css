@@ -1,27 +1,116 @@
 /*
- * Narsil: forged steel with an ember core.
- * Cool blue-steel surfaces carry the everyday state; molten gold is reserved for
+ * Narsil: the chibi sea serpent from narsilPet, in narsil-skin's sea palette.
+ * A night sea in the dark theme, the same sea by day in the light one; the theme
+ * follows the clock (src/renderer/src/theme.ts). Amber (warning) is reserved for
  * the two things that need you: what Narsil recommends and meetings about to start.
  */
-:root {
-  --frost: #eef2f6;
-  --surface: #ffffff;
-  --ink: #1a2634;
-  --ink-soft: #566678;
-  --steel: #4e6f94;
-  --steel-deep: #2e4561;
-  --line: #d5dee8;
-  --ember: #f3b23c;
-  --ember-soft: #fff3dc;
-  --ember-ink: #6e4300;
-  --danger: #b23a34;
 
+/* Registered as colors so a theme change cross-fades every token (and the gradients built from them). */
+@property --surface-0 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --surface-1 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --surface-2 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --surface-3 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --text-0 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --text-1 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --text-2 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --accent { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --accent-text { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --accent-fill { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --on-accent { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --danger-text { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --danger-soft { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --success { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --warning { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --warning-soft { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --warning-fill { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --on-warning { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --line { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --water { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --shadow { syntax: '<color>'; inherits: true; initial-value: transparent; }
+
+/* Dark (narsil-skin "narsil"): also the default until the clock sets data-theme. */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --surface-0: #0f1a2c; /* panel */
+  --surface-1: #142339; /* header */
+  --surface-2: #192a44; /* cards */
+  --surface-3: #1c2f4c; /* inputs, pills */
+  --text-0: #dce6fa;
+  --text-1: #b4c4e0;
+  --text-2: #93a6c8;
+  --accent: #5aaeff;
+  --accent-text: #5aaeff;
+  --accent-fill: #5aaeff;
+  --on-accent: #0f1a2c;
+  --danger-text: #ff5a6e;
+  --danger-soft: #3a1f30;
+  --success: #5fd3a0;
+  --warning: #ffc94d;
+  --warning-soft: #3a3322;
+  --warning-fill: #ffc94d;
+  --on-warning: #0f1a2c;
+  --line: rgb(147 166 200 / 0.24);
+  --water: #5fa6e6;
+  --shadow: rgb(0 0 0 / 0.5);
+}
+
+/* Light (narsil-skin "narsil-light"): fills and small text use darker shades of accent and warning to stay legible. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --surface-0: #c9e7f1;
+  --surface-1: #d8eef6;
+  --surface-2: #e8f5fa;
+  --surface-3: #d8eef6;
+  --text-0: #0f2f47;
+  --text-1: #26475f;
+  --text-2: #3a5b72;
+  --accent: #1f83a8;
+  --accent-text: #186f8f;
+  --accent-fill: #186f8f;
+  --on-accent: #ffffff;
+  --danger-text: #c2334a;
+  --danger-soft: #f6dde2;
+  --success: #2e8a5a;
+  --warning: #b07a12;
+  --warning-soft: #f7e8c4;
+  --warning-fill: #8a5f0e;
+  --on-warning: #ffffff;
+  --line: rgb(15 47 71 / 0.18);
+  --water: #7cc6f2;
+  --shadow: rgb(15 47 71 / 0.3);
+}
+
+:root {
   --font-text: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
 
-  color: var(--ink);
+  color: var(--text-0);
   font: 14px/1.45 var(--font-text);
   -webkit-font-smoothing: antialiased;
+
+  transition:
+    --surface-0 400ms ease,
+    --surface-1 400ms ease,
+    --surface-2 400ms ease,
+    --surface-3 400ms ease,
+    --text-0 400ms ease,
+    --text-1 400ms ease,
+    --text-2 400ms ease,
+    --accent 400ms ease,
+    --accent-text 400ms ease,
+    --accent-fill 400ms ease,
+    --on-accent 400ms ease,
+    --danger-text 400ms ease,
+    --danger-soft 400ms ease,
+    --success 400ms ease,
+    --warning 400ms ease,
+    --warning-soft 400ms ease,
+    --warning-fill 400ms ease,
+    --on-warning 400ms ease,
+    --line 400ms ease,
+    --water 400ms ease,
+    --shadow 400ms ease;
 }
 
 * {
@@ -46,7 +135,7 @@ textarea {
 }
 
 :focus-visible {
-  outline: 2px solid var(--steel);
+  outline: 2px solid var(--accent-text);
   outline-offset: 2px;
 }
 
@@ -65,49 +154,142 @@ textarea {
   -webkit-app-region: drag;
   width: 44px;
   height: 14px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   border-radius: 7px;
-  background: rgb(46 69 97 / 0.25);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
   cursor: grab;
 }
 
 .dock__avatar {
   position: relative;
   border: 0;
-  padding: 6px;
+  padding: 4px 10px 6px;
   background: none;
   cursor: pointer;
-  border-radius: 50%;
-  filter: drop-shadow(0 6px 10px rgb(26 38 52 / 0.35));
+  border-radius: 10px;
+  filter: drop-shadow(0 6px 8px var(--shadow));
 }
 
 .dock__badge {
   position: absolute;
-  top: 4px;
-  right: -2px;
+  z-index: 2;
+  top: 2px;
+  right: -6px;
   min-width: 24px;
   height: 24px;
   padding: 0 7px;
   border-radius: 12px;
-  background: var(--ember);
-  color: var(--ember-ink);
+  background: var(--warning-fill);
+  color: var(--on-warning);
   font: 700 13px/24px var(--font-display);
-  box-shadow: 0 0 0 2px var(--surface);
+  box-shadow: 0 0 0 2px var(--surface-0);
 }
 
-.shard__core {
-  opacity: 0.35;
-  transition: opacity 300ms ease;
+/* ---------- Narsil ---------- */
+
+.pet {
+  position: relative;
+  z-index: 1;
+  display: block;
+  flex: none;
 }
 
-.shard--alert .shard__core {
-  opacity: 1;
-  animation: ember 2.4s ease-in-out infinite;
+.pet--full {
+  width: 66px;
+  height: 90px;
 }
 
-@keyframes ember {
-  50% {
-    opacity: 0.55;
+/* Head and shoulders in a small round window, for the panel header. */
+.pet--head {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 30%, var(--surface-2), var(--surface-0));
+  border: 1px solid var(--line);
+}
+
+/* Two drawings at once while one fades into the next. */
+.pet__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: 50% 100%;
+  animation: pet-in 200ms ease-in-out both;
+}
+
+.pet--head .pet__img {
+  inset: auto;
+  top: -2px;
+  left: 50%;
+  width: auto;
+  height: 56px;
+  transform: translateX(-50%);
+}
+
+.pet__img--out {
+  animation: pet-out 200ms ease-in-out both;
+}
+
+@keyframes pet-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pet-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* narsilPet's water: rings spreading where she meets it, and a wave drifting under her. */
+.water {
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  bottom: -2px;
+  transform: translateX(-50%);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent);
+}
+
+.water__ripple {
+  fill: none;
+  stroke: var(--water);
+  stroke-width: 1.4;
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: ripple 2.4s ease-out infinite;
+}
+
+.water__wave {
+  fill: none;
+  stroke: var(--water);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  opacity: 0.55;
+  animation: wave 2.6s linear infinite;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+@keyframes wave {
+  to {
+    transform: translateX(-24px);
   }
 }
 
@@ -118,10 +300,12 @@ textarea {
   margin: 8px;
   display: flex;
   flex-direction: column;
-  background: var(--frost);
+  /* narsilPet's card: light falling from the top. */
+  background: radial-gradient(120% 70% at 50% 0%, var(--surface-2) 0%, var(--surface-0) 70%);
+  color: var(--text-0);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: 0 10px 28px rgb(26 38 52 / 0.28);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px var(--shadow);
   overflow: hidden;
 }
 
@@ -130,9 +314,10 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 10px 10px 14px;
-  background: var(--steel-deep);
-  color: #f2f6fa;
+  padding: 8px 10px 8px 12px;
+  background: color-mix(in srgb, var(--surface-1) 85%, transparent);
+  border-bottom: 1px solid var(--line);
+  color: var(--text-0);
 }
 
 .panel__head button {
@@ -153,15 +338,16 @@ textarea {
 .tab {
   border: 0;
   padding: 5px 10px;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
-  color: #c9d6e3;
+  color: var(--text-1);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .tab[aria-pressed='true'] {
-  background: rgb(255 255 255 / 0.14);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent-text);
 }
 
 .icon-btn {
@@ -170,15 +356,15 @@ textarea {
   width: 28px;
   height: 28px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
-  color: #c9d6e3;
+  color: var(--text-1);
   cursor: pointer;
 }
 
 .icon-btn:hover,
 .tab:hover {
-  background: rgb(255 255 255 / 0.1);
+  background: color-mix(in srgb, var(--text-0) 9%, transparent);
 }
 
 .panel__body {
@@ -191,8 +377,8 @@ textarea {
 .panel__error {
   margin: 0;
   padding: 8px 14px;
-  background: #fbe9e8;
-  color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger-text);
   font-size: 13px;
   white-space: pre-line;
 }
@@ -205,7 +391,7 @@ textarea {
 
 .empty {
   margin: 24px 8px;
-  color: var(--ink-soft);
+  color: var(--text-2);
   text-align: center;
 }
 
@@ -217,8 +403,9 @@ textarea {
   justify-content: space-between;
   gap: 10px;
   padding: 12px 14px;
-  background: var(--ember);
-  color: var(--ember-ink);
+  background: var(--warning-soft);
+  border-left: 4px solid var(--warning);
+  color: var(--text-0);
 }
 
 .reminder__title {
@@ -237,8 +424,8 @@ textarea {
 }
 
 .reminder .btn--ghost {
-  border-color: rgb(110 67 0 / 0.35);
-  color: var(--ember-ink);
+  border-color: color-mix(in srgb, var(--warning) 60%, transparent);
+  color: var(--text-0);
 }
 
 /* ---------- Mail ---------- */
@@ -246,8 +433,8 @@ textarea {
 .mail {
   padding: 12px 14px;
   margin-bottom: 10px;
-  background: var(--surface);
-  border-left: 3px solid var(--steel);
+  background: var(--surface-2);
+  border-left: 3px solid var(--accent);
   border-radius: 4px 10px 10px 4px;
 }
 
@@ -255,9 +442,9 @@ textarea {
   opacity: 0.6;
 }
 
-/* The email a clicked notification opened: an ember outline that fades out over about 2 s. */
+/* The email a clicked notification opened: an amber outline that fades out over about 2 s. */
 .mail--focus {
-  outline: 2px solid var(--ember);
+  outline: 2px solid var(--warning);
   outline-offset: 2px;
   animation: mail-focus 2s ease-out forwards;
 }
@@ -265,7 +452,7 @@ textarea {
 @keyframes mail-focus {
   0%,
   70% {
-    outline-color: var(--ember);
+    outline-color: var(--warning);
   }
   100% {
     outline-color: transparent;
@@ -277,12 +464,12 @@ textarea {
   justify-content: space-between;
   gap: 8px;
   font-size: 13px;
-  color: var(--ink-soft);
+  color: var(--text-2);
 }
 
 .mail__from {
   font-weight: 600;
-  color: var(--ink);
+  color: var(--text-0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -298,7 +485,7 @@ textarea {
 }
 
 .mail__summary--pending {
-  color: var(--ink-soft);
+  color: var(--text-2);
   font-style: italic;
 }
 
@@ -306,7 +493,7 @@ textarea {
   display: block;
   margin-top: 4px;
   font-size: 13px;
-  color: var(--ink-soft);
+  color: var(--text-2);
 }
 
 .mail__replies {
@@ -320,22 +507,22 @@ textarea {
   border: 1px solid var(--line);
   padding: 4px 11px;
   border-radius: 999px;
-  background: var(--frost);
+  background: var(--surface-3);
   cursor: pointer;
 }
 
 .pill:hover {
-  border-color: var(--steel);
+  border-color: var(--accent-text);
 }
 
 .pill--lead {
-  border-color: var(--ember);
-  background: var(--ember-soft);
+  border-color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .pill--ghost {
   background: transparent;
-  color: var(--ink-soft);
+  color: var(--text-2);
 }
 
 .mail__draft textarea {
@@ -343,7 +530,7 @@ textarea {
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: var(--frost);
+  background: var(--surface-3);
   resize: vertical;
 }
 
@@ -358,7 +545,7 @@ textarea {
 .mail__error,
 .setup__error {
   margin: 8px 0 0;
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 13px;
 }
 
@@ -368,14 +555,14 @@ textarea {
   border: 1px solid var(--line);
   padding: 5px 12px;
   border-radius: 6px;
-  background: var(--surface);
+  background: var(--surface-3);
   cursor: pointer;
   text-decoration: none;
   white-space: nowrap;
 }
 
 .btn:hover:not(:disabled) {
-  border-color: var(--steel);
+  border-color: var(--accent-text);
 }
 
 .btn:disabled {
@@ -384,9 +571,9 @@ textarea {
 }
 
 .btn--primary {
-  border-color: var(--steel-deep);
-  background: var(--steel-deep);
-  color: #ffffff;
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+  color: var(--on-accent);
 }
 
 .btn--ghost {
@@ -394,15 +581,15 @@ textarea {
 }
 
 .btn--delete:hover:not(:disabled) {
-  border-color: var(--danger);
-  color: var(--danger);
+  border-color: var(--danger-text);
+  color: var(--danger-text);
 }
 
-/* What Narsil recommends gets the ember. */
+/* What Narsil recommends gets the amber. */
 .btn.btn--lead {
-  border-color: var(--ember);
-  background: var(--ember-soft);
-  color: var(--ember-ink);
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  color: var(--text-0);
   font-weight: 600;
 }
 
@@ -410,7 +597,7 @@ textarea {
   border: 0;
   padding: 0;
   background: none;
-  color: var(--steel);
+  color: var(--accent-text);
   text-decoration: underline;
   cursor: pointer;
 }
@@ -441,7 +628,7 @@ textarea {
 .meeting__place {
   display: block;
   font-size: 12px;
-  color: var(--ink-soft);
+  color: var(--text-2);
 }
 
 .meeting__title {
@@ -451,7 +638,7 @@ textarea {
 
 .meeting__link {
   font-size: 13px;
-  color: var(--steel);
+  color: var(--accent-text);
 }
 
 /* ---------- Setup ---------- */
@@ -472,7 +659,7 @@ textarea {
   position: relative;
   padding: 12px 14px 14px 46px;
   margin-bottom: 10px;
-  background: var(--surface);
+  background: var(--surface-2);
   border-radius: 10px;
 }
 
@@ -484,7 +671,7 @@ textarea {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: var(--frost);
+  background: var(--surface-3);
   border: 1px solid var(--line);
   font: 600 12px/20px var(--font-display);
   text-align: center;
@@ -492,9 +679,9 @@ textarea {
 
 .step--done::before {
   content: '✓';
-  background: var(--steel);
-  border-color: var(--steel);
-  color: #ffffff;
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
 }
 
 .step h3 {
@@ -504,7 +691,7 @@ textarea {
 
 .step p {
   margin: 0 0 8px;
-  color: var(--ink-soft);
+  color: var(--text-2);
   font-size: 13px;
 }
 
@@ -519,7 +706,7 @@ textarea {
   padding: 5px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: var(--frost);
+  background: var(--surface-3);
 }
 
 .setup__actions {
@@ -546,7 +733,7 @@ textarea {
 .account__provider {
   flex: none;
   font-weight: 600;
-  color: var(--steel-deep);
+  color: var(--accent-text);
 }
 
 .account__email {
@@ -568,9 +755,9 @@ textarea {
   margin-top: 2px;
   padding: 0 6px;
   border-radius: 4px;
-  background: var(--frost);
+  background: var(--surface-3);
   border: 1px solid var(--line);
-  color: var(--ink-soft);
+  color: var(--text-2);
   font-size: 11px;
   line-height: 16px;
   overflow: hidden;
@@ -580,8 +767,29 @@ textarea {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shard--alert .shard__core {
+  /* Theme changes and drawing swaps happen at once. */
+  :root {
+    transition: none;
+  }
+
+  .pet__img {
     animation: none;
+  }
+
+  /* The drawings are transparent: hide the leaving one so the two never overlap. */
+  .pet__img--out {
+    animation: none;
+    visibility: hidden;
+  }
+
+  /* The water stays still: one quiet ring and the wave. */
+  .water__ripple,
+  .water__wave {
+    animation: none;
+  }
+
+  .water__ripple:first-child {
+    opacity: 0.45;
   }
 
   /* Keep the outline steady; App removes the class after 2 s. */
@@ -596,18 +804,18 @@ textarea {
 
 .panel__body::-webkit-scrollbar-thumb {
   border-radius: 4px;
-  background: rgb(78 111 148 / 0.35);
+  background: color-mix(in srgb, var(--text-2) 40%, transparent);
 }
 
 .mail__to {
   margin: 0 0 6px;
   font-size: 13px;
-  color: var(--ink-soft);
+  color: var(--text-2);
   overflow-wrap: anywhere;
 }
 
 .mail__to--warn {
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
 
@@ -629,7 +837,7 @@ textarea {
   gap: 8px;
   padding: 12px 14px;
   margin-bottom: 12px;
-  background: var(--surface);
+  background: var(--surface-2);
   border-radius: 10px;
 }
 
@@ -646,14 +854,14 @@ textarea {
 .rule-form__hint {
   margin: 0;
   font-size: 13px;
-  color: var(--ink-soft);
+  color: var(--text-2);
 }
 
 .rule-form label {
   display: grid;
   gap: 2px;
   font-size: 13px;
-  color: var(--ink-soft);
+  color: var(--text-2);
 }
 
 .rule-form input,
@@ -661,8 +869,8 @@ textarea {
   padding: 5px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: var(--frost);
-  color: var(--ink);
+  background: var(--surface-3);
+  color: var(--text-0);
 }
 
 .rule-form__actions {
@@ -673,7 +881,7 @@ textarea {
 
 .rules__error {
   margin: 0;
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 13px;
 }
 
@@ -690,8 +898,8 @@ textarea {
   gap: 10px;
   padding: 10px 12px;
   margin-bottom: 8px;
-  background: var(--surface);
-  border-left: 3px solid var(--ember);
+  background: var(--surface-2);
+  border-left: 3px solid var(--warning);
   border-radius: 4px 10px 10px 4px;
 }
 
@@ -712,7 +920,7 @@ textarea {
 .rule__when {
   display: block;
   font-size: 13px;
-  color: var(--ink-soft);
+  color: var(--text-2);
   overflow-wrap: anywhere;
 }
 
@@ -732,7 +940,7 @@ textarea {
 }
 
 .link-btn--danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .activity__item {
@@ -745,11 +953,11 @@ textarea {
 }
 
 .activity__item time {
-  color: var(--ink-soft);
+  color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
 
 .activity__item--error,
 .activity__error {
-  color: var(--danger);
+  color: var(--danger-text);
 }

@@ -71,7 +71,7 @@ npm start
 
 The second command downloads the Electron runtime. Recent npm versions skip that download during `npm install`.
 
-Narsil appears as a steel shard above the taskbar. Click it to open the panel, then go to **Ajustes** (settings):
+Narsil sits above the taskbar as a little sea serpent, drawn with the art from narsilPet. Click her to open the panel, then go to **Ajustes** (settings):
 
 1. **Elegir archivo de cliente** (choose client file): for Google accounts, pick the JSON you downloaded.
 2. **Guardar ID** (save ID): for Microsoft accounts, paste the Application (client) ID of your Microsoft app.
@@ -84,10 +84,12 @@ Secrets are encrypted with Windows DPAPI (Electron `safeStorage`) under `%APPDAT
 
 ## Using it
 
-- The number on the shard shows how many unread emails are waiting.
-- Drag the bar above the shard, or the panel header, to move Narsil.
+- The number next to Narsil shows how many unread emails are waiting.
+- Her pose shows what is going on: idle, reading new mail while Claude triages it, asking for attention when mail waits or a meeting is about to start, showing an error, or celebrating for a few seconds after an action or reply succeeds.
+- The look follows the clock like the narsil-skin mod: a light theme from 6:00 to 17:59 and a dark theme the rest of the day, re-checked every 10 seconds. With reduced motion turned on in Windows, Narsil uses her still drawings and the theme changes without a fade.
+- Drag the bar above her, or the panel header, to move Narsil.
 - The tray icon lets you show or hide Narsil, check now, start Narsil with Windows, or quit.
-- Closing the panel (the minus button) shrinks Narsil back to the shard. It keeps running.
+- Closing the panel (the minus button) shrinks Narsil back to the docked serpent. It keeps running.
 
 ### Rules
 
@@ -108,7 +110,7 @@ Every 15 seconds Narsil runs a cheap change check on each account: Gmail's mailb
 
 When new mail arrives, rules run first, then Claude reads it, then Windows shows a notification with the sender, the subject, Claude's summary and its suggestion (for example "Sugerencia: archivar"). With several accounts the notification also names the account. When several emails arrive in one check you get one notification, "N correos nuevos", listing up to three subjects.
 
-Clicking a notification opens the panel on the **Correo** tab and scrolls to that email, which flashes an ember outline. A grouped notification just opens the list.
+Clicking a notification opens the panel on the **Correo** tab and scrolls to that email, which flashes an amber outline. A grouped notification just opens the list.
 
 These never notify:
 

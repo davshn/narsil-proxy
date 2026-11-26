@@ -10,7 +10,7 @@ import { RulesFileStore } from './adapters/rulesStore'
 import { GoogleProvider } from './adapters/google/provider'
 import { MicrosoftProvider } from './adapters/microsoft/provider'
 
-const COLLAPSED = { width: 150, height: 170 }
+const COLLAPSED = { width: 150, height: 180 }
 const EXPANDED = { width: 460, height: 660 }
 const MARGIN = 16
 

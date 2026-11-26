@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppStatus, InboxItem, Meeting, ReminderAlert, Rule, RuleActivity, RuleInput } from '@shared/types'
 import { ruleDraftFromEmail } from '@shared/rules'
-import { Shard } from './components/Shard'
+import { NarsilPet, Water, petPose } from './components/NarsilPet'
 import { EmailCard } from './components/EmailCard'
 import { Meetings } from './components/Meetings'
 import { Setup } from './components/Setup'
 import { Rules } from './components/Rules'
+import { useDayNightTheme } from './theme'
 
 type Tab = 'mail' | 'meetings' | 'rules' | 'setup'
+
+/** How long Narsil shows her "done" pose after an action or reply succeeds. */
+const CELEBRATE_MS = 3000
 
 const EMPTY_STATUS: AppStatus = { accounts: [], hasGoogleClient: false, hasMicrosoftClient: false, hasAnthropicKey: false }
 
@@ -17,6 +21,7 @@ function isReady(s: AppStatus): boolean {
 }
 
 export function App(): React.JSX.Element {
+  useDayNightTheme()
   const [status, setStatus] = useState<AppStatus>(EMPTY_STATUS)
   const [inbox, setInbox] = useState<InboxItem[]>([])
   const [meetings, setMeetings] = useState<Meeting[]>([])
@@ -31,6 +36,25 @@ export function App(): React.JSX.Element {
   /** The email a clicked notification asked to show; cleared once it is scrolled into view. */
   const [focusKey, setFocusKey] = useState<string | null>(null)
   const [highlighted, setHighlighted] = useState<string | null>(null)
+  const [celebrating, setCelebrating] = useState(false)
+  const celebrateTimer = useRef<number | null>(null)
+
+  /** Shows the "done" pose for a few seconds; a new success restarts the clock. */
+  const celebrate = useCallback(() => {
+    if (celebrateTimer.current !== null) window.clearTimeout(celebrateTimer.current)
+    setCelebrating(true)
+    celebrateTimer.current = window.setTimeout(() => {
+      celebrateTimer.current = null
+      setCelebrating(false)
+    }, CELEBRATE_MS)
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (celebrateTimer.current !== null) window.clearTimeout(celebrateTimer.current)
+    },
+    []
+  )
 
   const setExpanded = useCallback((value: boolean) => {
     setExpandedState(value)
@@ -83,22 +107,36 @@ export function App(): React.JSX.Element {
     return () => clearTimeout(timer)
   }, [highlighted])
 
-  const onAction = useCallback(async (key: string, action: 'archive' | 'delete' | 'save') => {
-    const result = await window.narsil.applyAction(key, action)
-    return result.ok ? null : (result.error ?? 'La acción falló.')
-  }, [])
+  const onAction = useCallback(
+    async (key: string, action: 'archive' | 'delete' | 'save') => {
+      const result = await window.narsil.applyAction(key, action)
+      if (result.ok) celebrate()
+      return result.ok ? null : (result.error ?? 'La acción falló.')
+    },
+    [celebrate]
+  )
 
-  const onReply = useCallback(async (key: string, body: string) => {
-    const result = await window.narsil.sendReply(key, body)
-    return result.ok ? null : (result.error ?? 'No se pudo enviar la respuesta.')
-  }, [])
+  const onReply = useCallback(
+    async (key: string, body: string) => {
+      const result = await window.narsil.sendReply(key, body)
+      if (result.ok) celebrate()
+      return result.ok ? null : (result.error ?? 'No se pudo enviar la respuesta.')
+    },
+    [celebrate]
+  )
 
   const onCreateRule = useCallback((from: string) => {
     setRuleDraft(ruleDraftFromEmail(from))
     setTab('rules')
   }, [])
 
-  const needsAttention = inbox.length > 0 || alert !== null
+  const pose = petPose({
+    hasError: Boolean(status.lastError),
+    reminder: alert !== null,
+    triaging: inbox.some((item) => item.triage === null && !item.triageError),
+    unread: inbox.length > 0,
+    celebrating
+  })
   // Account labels only help once there is more than one mailbox to tell apart.
   const accountLabel = useMemo(() => {
     if (status.accounts.length < 2) return (): undefined => undefined
@@ -116,7 +154,8 @@ export function App(): React.JSX.Element {
           onClick={() => setExpanded(true)}
           aria-label={inbox.length > 0 ? `Abrir Narsil, ${inbox.length} correos pendientes` : 'Abrir Narsil'}
         >
-          <Shard size={64} alert={needsAttention} />
+          <Water />
+          <NarsilPet pose={pose} />
           {inbox.length > 0 && <span className="dock__badge">{inbox.length}</span>}
         </button>
       </main>
@@ -126,7 +165,7 @@ export function App(): React.JSX.Element {
   return (
     <main className="panel">
       <header className="panel__head">
-        <Shard size={26} alert={needsAttention} />
+        <NarsilPet pose={pose} variant="head" />
         <h1 className="panel__title">Narsil</h1>
         <nav className="tabs" aria-label="Secciones">
           <button type="button" className="tab" aria-pressed={tab === 'mail'} onClick={() => setTab('mail')}>
