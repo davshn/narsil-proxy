@@ -92,7 +92,8 @@ export function MeetingForm({ accounts, onCancel, onCreated }: MeetingFormProps)
         Ubicación
         <input value={location} maxLength={MAX_LOCATION} onChange={(e) => setLocation(e.target.value)} placeholder="Opcional" />
       </label>
-      {error && !account?.needsReconnect && (
+      {/* The reconnect notice above already says it; any other error must still show. */}
+      {error && !(account?.needsReconnect && error.startsWith('Reconecta esta cuenta')) && (
         <p className="meeting-form__error" role="alert">
           {error}
         </p>

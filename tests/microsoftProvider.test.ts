@@ -538,7 +538,8 @@ describe('Microsoft scopes', () => {
 
     expect(error).toBeInstanceOf(ReconnectRequiredError)
     expect((error as Error).message).toBe('Reconecta esta cuenta para agregar reuniones.')
-    expect(scopesAsked()[0]).toEqual(READ_WRITE)
+    // Adding meetings asks only for what it needs, so older grants without rules consent still work.
+    expect(scopesAsked()[0]).toEqual(['Mail.ReadWrite', 'Mail.Send', 'User.Read', 'offline_access', 'Calendars.ReadWrite'])
     expect(fetchMock).not.toHaveBeenCalled()
     await expect(calendar.upcoming(new Date('2026-11-25T12:00:00Z'))).resolves.toEqual([])
   })

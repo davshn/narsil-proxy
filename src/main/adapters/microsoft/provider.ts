@@ -36,6 +36,12 @@ export const CALENDAR_READ_SCOPES = [
   [...MAIL_SCOPES, 'Calendars.Read']
 ]
 
+/** Managing inbox rules: only what rules need, so an older grant without Calendars.ReadWrite still works. */
+export const RULES_SCOPES = [...MAIL_SCOPES, 'MailboxSettings.ReadWrite']
+
+/** Adding meetings. */
+export const MEETING_WRITE_SCOPES = [...MAIL_SCOPES, 'Calendars.ReadWrite']
+
 /**
  * Every scope a sign-in asks for: MailboxSettings.ReadWrite lets Narsil manage inbox rules and
  * Calendars.ReadWrite lets it add meetings.
@@ -221,10 +227,10 @@ export class MicrosoftProvider implements ProviderAuth {
     // accounts never granted: ask for them apart, so a missing consent only blocks that feature
     // and never the mail or reading the calendar.
     const rulesGraph = new GraphClient(() =>
-      this.accessToken(app, homeAccountId, MICROSOFT_SCOPES, () => new ReconnectRequiredError())
+      this.accessToken(app, homeAccountId, RULES_SCOPES, () => new ReconnectRequiredError())
     )
     const meetingsGraph = new GraphClient(() =>
-      this.accessToken(app, homeAccountId, MICROSOFT_SCOPES, () => new ReconnectRequiredError(MEETING_RECONNECT))
+      this.accessToken(app, homeAccountId, MEETING_WRITE_SCOPES, () => new ReconnectRequiredError(MEETING_RECONNECT))
     )
     return {
       mail: new OutlookMail(graph, accountId),
