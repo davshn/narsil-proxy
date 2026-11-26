@@ -2,6 +2,7 @@ import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeIm
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { themeAt } from '@shared/dayNight'
 import {
   IPC,
   type Account,
@@ -12,7 +13,7 @@ import {
   type InboxItem
 } from '@shared/types'
 import { SecureStore } from './adapters/secureStore'
-import { NarsilService, type NarsilEvents } from './app/narsilService'
+import { MAX_MEETING_LOCATION, MAX_MEETING_TITLE, NarsilService, type NarsilEvents } from './app/narsilService'
 import { AccountRegistry, AccountSettingsSchema, migrateLegacyGoogleTokens } from './app/accounts'
 import { RulesFileStore } from './adapters/rulesStore'
 import { GoogleProvider } from './adapters/google/provider'
@@ -75,22 +76,35 @@ function createWindow(): void {
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
-/** Draws a 32x32 glowing orb so the tray icon needs no binary asset. */
+/**
+ * A file of the repository's `resources/` folder. electron-builder copies that folder next to
+ * app.asar as `resources/icons` (`extraResources`); unpackaged, the app path is the repository.
+ */
+function resourcePath(name: string): string {
+  return app.isPackaged ? join(process.resourcesPath, 'icons', name) : join(app.getAppPath(), 'resources', name)
+}
+
+/** narsilPet's app icon, scaled for the notification area. */
 function trayIcon(): Electron.NativeImage {
-  const size = 32
-  const buf = Buffer.alloc(size * size * 4)
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const d = Math.hypot(x - 15.5, y - 15.5) / 15.5
-      const i = (y * size + x) * 4
-      const alpha = d <= 1 ? 255 : 0
-      buf[i] = 255 // B
-      buf[i + 1] = Math.round(200 - 80 * d) // G
-      buf[i + 2] = Math.round(120 - 60 * d) // R
-      buf[i + 3] = alpha
-    }
-  }
-  return nativeImage.createFromBitmap(buf, { width: size, height: size })
+  return nativeImage.createFromPath(resourcePath('icon.png')).resize({ width: 32, height: 32, quality: 'best' })
+}
+
+const faces = new Map<string, Electron.NativeImage>()
+
+/**
+ * Narsil's head and shoulders from her still, in the claro or oscuro variant of the hour: the
+ * square at the top of the drawing, the same crop the panel header shows.
+ */
+function notificationIcon(): Electron.NativeImage {
+  const variant = themeAt(new Date()) === 'light' ? 'claro' : 'oscuro'
+  const cached = faces.get(variant)
+  if (cached) return cached
+  const still = nativeImage.createFromPath(resourcePath(`narsil-${variant}.png`))
+  const { width, height } = still.getSize()
+  const side = Math.min(width, height)
+  const face = still.isEmpty() ? trayIcon() : still.crop({ x: Math.floor((width - side) / 2), y: 0, width: side, height: side })
+  faces.set(variant, face)
+  return face
 }
 
 function createTray(): void {
@@ -174,7 +188,7 @@ function notifyNewEmails(items: InboxItem[], accounts: Account[]): void {
       .join('\n')
     key = null
   }
-  const notification = new Notification({ title, body, icon: trayIcon() })
+  const notification = new Notification({ title, body, icon: notificationIcon() })
   liveNotifications.add(notification)
   const release = (): void => void liveNotifications.delete(notification)
   notification.on('click', () => {
@@ -230,6 +244,12 @@ const ServerRuleInputSchema = z.object({
   folderId: FolderId.optional(),
   folderName: z.string().max(500).optional()
 })
+const NewMeetingSchema = z.object({
+  title: z.string().max(MAX_MEETING_TITLE * 2),
+  start: z.string().min(1).max(64),
+  end: z.string().min(1).max(64),
+  location: z.string().max(MAX_MEETING_LOCATION * 2).optional()
+})
 const ConvertTargetSchema = z
   .object({ accountId: AccountId, folderId: FolderId.optional(), folderName: z.string().max(500).optional() })
   .optional()
@@ -238,6 +258,11 @@ function registerIpc(svc: NarsilService): void {
   ipcMain.handle(IPC.getStatus, () => svc.status())
   ipcMain.handle(IPC.getInbox, () => svc.inboxItems())
   ipcMain.handle(IPC.getMeetings, () => svc.upcomingMeetings())
+  ipcMain.handle(IPC.createMeeting, (_e, accountId: unknown, input: unknown) =>
+    run(async () => {
+      await svc.createMeeting(AccountId.parse(accountId), NewMeetingSchema.parse(input))
+    })
+  )
   ipcMain.handle(IPC.refresh, () => run(() => svc.refresh()))
   ipcMain.handle(IPC.addAccount, (_e, provider: unknown) => run(() => svc.addAccount(ProviderSchema.parse(provider))))
   ipcMain.handle(IPC.removeAccount, (_e, id: unknown) => run(() => svc.removeAccount(AccountId.parse(id))))
@@ -325,7 +350,7 @@ if (!app.requestSingleInstanceLock()) {
         new Notification({
           title: `${alert.meeting.title} en ${alert.minutesUntil} min`,
           body: `Empieza a las ${time}${alert.meeting.location ? `, ${alert.meeting.location}` : ''}`,
-          icon: trayIcon()
+          icon: notificationIcon()
         }).show()
       }
     }

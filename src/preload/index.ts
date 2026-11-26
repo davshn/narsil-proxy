@@ -16,6 +16,7 @@ const api: NarsilApi = {
   setAnthropicKey: (key) => ipcRenderer.invoke(IPC.setAnthropicKey, key),
   getInbox: () => ipcRenderer.invoke(IPC.getInbox),
   getMeetings: () => ipcRenderer.invoke(IPC.getMeetings),
+  createMeeting: (accountId, input) => ipcRenderer.invoke(IPC.createMeeting, accountId, input),
   refresh: () => ipcRenderer.invoke(IPC.refresh),
   applyAction: (key, action, folderId) => ipcRenderer.invoke(IPC.applyAction, key, action, folderId),
   listFolders: (accountId) => ipcRenderer.invoke(IPC.listFolders, accountId),

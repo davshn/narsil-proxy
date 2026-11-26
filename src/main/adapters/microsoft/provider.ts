@@ -8,9 +8,15 @@ import {
   type ICachePlugin,
   type InteractiveRequest
 } from '@azure/msal-node'
-import { ReconnectRequiredError, type AccountConnection, type AddedAccount, type ProviderAuth } from '../../app/ports'
+import {
+  MEETING_RECONNECT,
+  ReconnectRequiredError,
+  type AccountConnection,
+  type AddedAccount,
+  type ProviderAuth
+} from '../../app/ports'
 import type { SecretName, SecureStore } from '../secureStore'
-import { GraphClient } from './graphClient'
+import { GraphClient, type AccessTokenSource } from './graphClient'
 import { OutlookCalendar } from './outlookCalendar'
 import { OutlookMail } from './outlookMail'
 import { OutlookRules } from './outlookRules'
@@ -18,18 +24,35 @@ import { OutlookRules } from './outlookRules'
 /** `common` accepts both personal Microsoft accounts and work or school accounts. */
 export const MICROSOFT_AUTHORITY = 'https://login.microsoftonline.com/common'
 
-/** What mail and calendar need; accounts connected before rules lived in Outlook granted only these. */
-export const MAIL_SCOPES = ['Mail.ReadWrite', 'Mail.Send', 'Calendars.Read', 'User.Read', 'offline_access']
+/** What mail needs; every account Narsil ever connected granted these. */
+export const MAIL_SCOPES = ['Mail.ReadWrite', 'Mail.Send', 'User.Read', 'offline_access']
 
-/** Every scope a sign-in asks for: MailboxSettings.ReadWrite lets Narsil manage inbox rules. */
+/**
+ * Reading the calendar, newest grant first: accounts connected before Narsil could add meetings
+ * granted only Calendars.Read, newer ones only Calendars.ReadWrite.
+ */
+export const CALENDAR_READ_SCOPES = [
+  [...MAIL_SCOPES, 'Calendars.ReadWrite'],
+  [...MAIL_SCOPES, 'Calendars.Read']
+]
+
+/**
+ * Every scope a sign-in asks for: MailboxSettings.ReadWrite lets Narsil manage inbox rules and
+ * Calendars.ReadWrite lets it add meetings.
+ */
 export const MICROSOFT_SCOPES = [
   'Mail.ReadWrite',
   'Mail.Send',
   'MailboxSettings.ReadWrite',
-  'Calendars.Read',
+  'Calendars.ReadWrite',
   'User.Read',
   'offline_access'
 ]
+
+const SIGN_IN_AGAIN = 'Microsoft pide volver a iniciar sesión en esta cuenta; quítala y vuelve a agregarla.'
+
+/** The silent token request needs a consent the account never gave. */
+class ConsentNeededError extends Error {}
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const LOGIN_TIMEOUT_MS = 5 * 60_000
@@ -193,12 +216,19 @@ export class MicrosoftProvider implements ProviderAuth {
     if (!homeAccountId || !app) return null
     this.unconnected.delete(accountId)
     const graph = new GraphClient(() => this.accessToken(app, homeAccountId, MAIL_SCOPES))
-    // Rules need MailboxSettings.ReadWrite, which older accounts never granted: ask for it apart,
-    // so a missing consent only blocks the rules and never the mail.
-    const rulesGraph = new GraphClient(() => this.accessToken(app, homeAccountId, MICROSOFT_SCOPES, true))
+    const calendarGraph = new GraphClient(this.calendarReadToken(app, homeAccountId))
+    // Rules need MailboxSettings.ReadWrite and adding meetings Calendars.ReadWrite, which older
+    // accounts never granted: ask for them apart, so a missing consent only blocks that feature
+    // and never the mail or reading the calendar.
+    const rulesGraph = new GraphClient(() =>
+      this.accessToken(app, homeAccountId, MICROSOFT_SCOPES, () => new ReconnectRequiredError())
+    )
+    const meetingsGraph = new GraphClient(() =>
+      this.accessToken(app, homeAccountId, MICROSOFT_SCOPES, () => new ReconnectRequiredError(MEETING_RECONNECT))
+    )
     return {
       mail: new OutlookMail(graph, accountId),
-      calendar: new OutlookCalendar(graph, accountId),
+      calendar: new OutlookCalendar(calendarGraph, accountId, meetingsGraph),
       rules: new OutlookRules(rulesGraph, accountId)
     }
   }
@@ -296,12 +326,36 @@ export class MicrosoftProvider implements ProviderAuth {
     }
   }
 
-  /** A token for `scopes`; for the rules, a needed consent means the account must reconnect. */
+  /**
+   * Tokens for reading the calendar with whichever calendar scope the account granted; the scopes
+   * that worked are reused until the connection is rebuilt (a reconnect rebuilds it).
+   */
+  private calendarReadToken(app: PublicClientApplication, homeAccountId: string): AccessTokenSource {
+    let granted: string[] | null = null
+    return async () => {
+      if (granted) return this.accessToken(app, homeAccountId, granted)
+      for (const scopes of CALENDAR_READ_SCOPES) {
+        try {
+          const token = await this.accessToken(app, homeAccountId, scopes, () => new ConsentNeededError())
+          granted = scopes
+          return token
+        } catch (error) {
+          if (!(error instanceof ConsentNeededError)) throw error
+        }
+      }
+      throw new Error(SIGN_IN_AGAIN)
+    }
+  }
+
+  /**
+   * A token for `scopes`. When Microsoft wants a consent the account never gave, `onConsent` names
+   * the error (e.g. the rules or a new meeting need a reconnect); without it the account must sign in again.
+   */
   private async accessToken(
     app: PublicClientApplication,
     homeAccountId: string,
     scopes: string[],
-    forRules = false
+    onConsent?: () => Error
   ): Promise<string> {
     let account: AccountInfo | null
     try {
@@ -314,10 +368,7 @@ export class MicrosoftProvider implements ProviderAuth {
       const result = await app.acquireTokenSilent({ account, scopes })
       return result.accessToken
     } catch (error) {
-      if (forRules && error instanceof InteractionRequiredAuthError) throw new ReconnectRequiredError()
-      if (error instanceof InteractionRequiredAuthError) {
-        throw new Error('Microsoft pide volver a iniciar sesión en esta cuenta; quítala y vuelve a agregarla.')
-      }
+      if (error instanceof InteractionRequiredAuthError) throw onConsent ? onConsent() : new Error(SIGN_IN_AGAIN)
       throw new Error(`No se pudo renovar la sesión de Microsoft: ${errorText(error)}`)
     }
   }

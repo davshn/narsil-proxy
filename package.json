@@ -19,8 +19,22 @@
       "out/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "icons",
+        "filter": [
+          "*.png"
+        ]
+      }
+    ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "resources/icon-oscuro.ico"
+    },
+    "nsis": {
+      "createStartMenuShortcut": true,
+      "shortcutName": "Narsil"
     }
   },
   "dependencies": {

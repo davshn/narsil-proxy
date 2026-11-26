@@ -203,7 +203,7 @@ describe('GoogleProvider', () => {
     expect(clients.every((c) => vi.mocked(c.revokeToken).mock.calls.length === 0)).toBe(true)
   })
 
-  it('asks Google for the Gmail filter scope with the mail and calendar scopes', async () => {
+  it('asks Google for the Gmail filter scope with the mail scopes and the calendar events scope', async () => {
     const store = memoryStore({ 'google-client': CLIENT })
     let scopes: string[] = []
     const { provider } = makeProvider(store, {
@@ -219,7 +219,7 @@ describe('GoogleProvider', () => {
       'https://www.googleapis.com/auth/gmail.modify',
       'https://www.googleapis.com/auth/gmail.send',
       'https://www.googleapis.com/auth/gmail.settings.basic',
-      'https://www.googleapis.com/auth/calendar.readonly'
+      'https://www.googleapis.com/auth/calendar.events'
     ])
   })
 
@@ -295,7 +295,7 @@ describe('GoogleProvider', () => {
     'https://www.googleapis.com/auth/gmail.modify',
     'https://www.googleapis.com/auth/gmail.send',
     'https://www.googleapis.com/auth/gmail.settings.basic',
-    'https://www.googleapis.com/auth/calendar.readonly'
+    'https://www.googleapis.com/auth/calendar.events'
   ]
   const grantWithout = (scope: string) => ({
     access_token: 'a-new',
@@ -303,7 +303,7 @@ describe('GoogleProvider', () => {
     scope: ALL_SCOPES.filter((s) => s !== scope).join(' ')
   })
 
-  it.each(['gmail.modify', 'gmail.send', 'calendar.readonly'])(
+  it.each(['gmail.modify', 'gmail.send', 'calendar.events'])(
     'keeps the old tokens when a reconnect grant lacks %s',
     async (missing) => {
       const old = JSON.stringify({ refresh_token: 'r1', scope: ALL_SCOPES.join(' ') })

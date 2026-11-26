@@ -7,11 +7,17 @@ import { z } from 'zod'
 /** Lets Narsil manage Gmail filters, which hold the user's rules. */
 export const GMAIL_SETTINGS_SCOPE = 'https://www.googleapis.com/auth/gmail.settings.basic'
 
+/**
+ * Reads and adds calendar events. Accounts connected before it granted `calendar.readonly`,
+ * which still reads; adding a meeting asks them to reconnect.
+ */
+export const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events'
+
 export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.send',
   GMAIL_SETTINGS_SCOPE,
-  'https://www.googleapis.com/auth/calendar.readonly'
+  GOOGLE_CALENDAR_SCOPE
 ]
 
 const LOGIN_TIMEOUT_MS = 5 * 60_000

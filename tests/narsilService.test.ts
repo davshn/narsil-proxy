@@ -9,6 +9,7 @@ import type {
   AccountSettings,
   MailFolder,
   Meeting,
+  NewMeeting,
   NewServerRule,
   ProviderKind,
   Rule,
@@ -58,6 +59,12 @@ function makeMailbox() {
     bodies: {} as Record<string, string>,
     senders: {} as Record<string, string>,
     meetings: [] as Meeting[],
+    /** Every calendar.createEvent input, in order. */
+    createdEvents: [] as NewMeeting[],
+    /** What calendar.createEvent throws, e.g. a ReconnectRequiredError. */
+    createEventError: null as Error | null,
+    /** How many times calendar.upcoming() ran. */
+    calendarReads: 0,
     listError: null as Error | null,
     /** Ids whose getMessage() fails. */
     badIds: new Set<string>(),
@@ -168,7 +175,20 @@ class FakeProvider implements ProviderAuth {
         createFolder: (name) => box.createFolder(name),
         reply: (email, body) => box.reply(email, body)
       },
-      calendar: { upcoming: async () => box.meetings },
+      calendar: {
+        upcoming: async () => {
+          box.calendarReads++
+          return box.meetings
+        },
+        createEvent: async (input) => {
+          box.createdEvents.push(input)
+          if (box.createEventError) throw box.createEventError
+          const meeting: Meeting = { id: `${accountId}:ev${box.createdEvents.length}`, accountId, title: input.title, start: input.start, end: input.end }
+          if (input.location) meeting.location = input.location
+          box.meetings = [...box.meetings, meeting]
+          return meeting
+        }
+      },
       rules: {
         list: async () => {
           if (box.rulesError) throw box.rulesError
@@ -1437,5 +1457,73 @@ describe('NarsilService server rules', () => {
       'Reconecta esta cuenta para administrar sus reglas.'
     )
     expect(service.serverRules()[0]?.needsReconnect).toBe(true)
+  })
+})
+
+describe('NarsilService new meetings', () => {
+  const START = '2026-11-26T15:00:00.000Z'
+  const END = '2026-11-26T15:30:00.000Z'
+  const MEETING: NewMeeting = { title: 'Revisión', start: START, end: END, location: 'Sala 2' }
+
+  it('creates the meeting on the chosen account only, then reads that calendar again', async () => {
+    const { service, google, events } = await makeService({ accounts: [ANA, BETO] })
+    const ana = google.box('g1')
+    const beto = google.box('g2')
+    const readsBefore = { ana: ana.calendarReads, beto: beto.calendarReads }
+    events.meetingsChanged.mockClear()
+
+    const created = await service.createMeeting('g2', { ...MEETING, title: '  Revisión  ', location: '  Sala 2 ' })
+
+    expect(ana.createdEvents).toEqual([])
+    expect(beto.createdEvents).toEqual([MEETING])
+    expect(created).toMatchObject({ id: 'g2:ev1', accountId: 'g2', title: 'Revisión' })
+    expect(beto.calendarReads).toBe(readsBefore.beto + 1)
+    expect(ana.calendarReads).toBe(readsBefore.ana)
+    expect(service.upcomingMeetings().map((m) => m.id)).toEqual(['g2:ev1'])
+    expect(events.meetingsChanged).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'g2:ev1' })])
+  })
+
+  it('leaves out a blank location', async () => {
+    const { service, google } = await makeService()
+    await service.createMeeting('g1', { title: 'Café', start: START, end: END, location: '   ' })
+    expect(google.box('g1').createdEvents).toEqual([{ title: 'Café', start: START, end: END }])
+  })
+
+  it.each<[string, NewMeeting, string]>([
+    ['an empty title', { title: '   ', start: START, end: END }, 'Escribe un título para la reunión.'],
+    ['an end equal to the start', { title: 'A', start: START, end: START }, 'La hora de fin debe ser posterior a la de inicio.'],
+    ['an end before the start', { title: 'A', start: END, end: START }, 'La hora de fin debe ser posterior a la de inicio.'],
+    ['an invalid start', { title: 'A', start: 'mañana', end: END }, 'La fecha o la hora no son válidas.'],
+    ['an invalid end', { title: 'A', start: START, end: '2026-13-40T99:00' }, 'La fecha o la hora no son válidas.']
+  ])('rejects %s in Spanish without calling the calendar', async (_case, input, error) => {
+    const { service, google } = await makeService()
+    await expect(service.createMeeting('g1', input)).rejects.toThrow(new Error(error))
+    expect(google.box('g1').createdEvents).toEqual([])
+  })
+
+  it('rejects an account that is not connected', async () => {
+    const { service } = await makeService()
+    await expect(service.createMeeting('nope', MEETING)).rejects.toThrow('Esta cuenta ya no está conectada.')
+  })
+
+  it('flags the account for a reconnect when the calendar lacks the write permission, and meetings still read', async () => {
+    const { service, google } = await makeService()
+    const box = google.box('g1')
+    box.meetings = [{ id: 'g1:old', accountId: 'g1', title: 'Antes', start: START, end: END }]
+    box.createEventError = new ReconnectRequiredError('Reconecta esta cuenta para agregar reuniones.')
+
+    await expect(service.createMeeting('g1', MEETING)).rejects.toThrow('Reconecta esta cuenta para agregar reuniones.')
+
+    expect(service.status().accounts[0]?.needsReconnect).toBe(true)
+    // Rules that list fine must not clear the flag the calendar raised.
+    await service.loadServerRules()
+    expect(service.status().accounts[0]?.needsReconnect).toBe(true)
+    await service.refresh()
+    expect(service.upcomingMeetings().map((m) => m.id)).toEqual(['g1:old'])
+    expect(service.status().lastError).toBeUndefined()
+
+    box.createEventError = null
+    await service.reconnectAccount('g1')
+    expect(service.status().accounts[0]?.needsReconnect).toBeUndefined()
   })
 })

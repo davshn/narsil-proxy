@@ -137,7 +137,7 @@ describe('MicrosoftProvider accounts', () => {
     expect(store.get(`microsoft-account.${a.accountId}`)).toBe('home-1')
     expect(msal.acquireTokenInteractive).toHaveBeenCalledTimes(1)
     expect(msal.acquireTokenInteractive.mock.calls[0]?.[0]).toMatchObject({
-      scopes: ['Mail.ReadWrite', 'Mail.Send', 'MailboxSettings.ReadWrite', 'Calendars.Read', 'User.Read', 'offline_access']
+      scopes: ['Mail.ReadWrite', 'Mail.Send', 'MailboxSettings.ReadWrite', 'Calendars.ReadWrite', 'User.Read', 'offline_access']
     })
   })
 
@@ -474,15 +474,126 @@ describe('Outlook calendar through Microsoft Graph', () => {
 })
 
 describe('Microsoft scopes', () => {
-  it('keeps mail on the mail scopes, so an account without the rule permission still polls', async () => {
+  const READ_WRITE = ['Mail.ReadWrite', 'Mail.Send', 'MailboxSettings.ReadWrite', 'Calendars.ReadWrite', 'User.Read', 'offline_access']
+  const BASE = ['Mail.ReadWrite', 'Mail.Send', 'User.Read', 'offline_access']
+  const scopesAsked = (): string[][] =>
+    msal.acquireTokenSilent.mock.calls.map((call) => (call as unknown as [{ scopes: string[] }])[0].scopes)
+  /** An account connected before Narsil could add meetings: it never granted Calendars.ReadWrite. */
+  const withoutCalendarWrite = (): void => {
+    msal.acquireTokenSilent.mockImplementation((async (request: { scopes: string[] }) => {
+      if (request.scopes.includes('Calendars.ReadWrite')) throw new msal.InteractionRequiredAuthError('consent_required')
+      return { accessToken: 'secret-token' }
+    }) as never)
+  }
+
+  afterEach(() => {
+    msal.acquireTokenSilent.mockImplementation(async () => ({ accessToken: 'secret-token' }))
+  })
+
+  it('signs in asking for Calendars.ReadWrite instead of Calendars.Read', async () => {
+    msal.acquireTokenInteractive.mockResolvedValue({ accessToken: 'secret-token', account: msal.account })
+    fetchMock.mockImplementation(async () => respond(200, { mail: 'ana@outlook.com' }))
+
+    await new MicrosoftProvider(connectedStore()).reconnect('acc-1', 'ana@outlook.com')
+
+    expect(msal.acquireTokenInteractive.mock.calls[0]?.[0]).toMatchObject({ scopes: READ_WRITE })
+  })
+
+  it('keeps mail on scopes every account granted, so no account needs a reconnect to poll', async () => {
     fetchMock.mockImplementation(async () => respond(200, { value: [] }))
     msal.acquireTokenSilent.mockClear()
 
     await connect().mail.listUnread({ includeCategories: false, windowDays: 2 })
 
-    expect(msal.acquireTokenSilent).toHaveBeenCalledWith(
-      expect.objectContaining({ scopes: ['Mail.ReadWrite', 'Mail.Send', 'Calendars.Read', 'User.Read', 'offline_access'] })
+    expect(scopesAsked()).toEqual([BASE])
+  })
+
+  it('reads the calendar with Calendars.ReadWrite, or with Calendars.Read for an account connected before', async () => {
+    fetchMock.mockImplementation(async () => respond(200, { value: [] }))
+    msal.acquireTokenSilent.mockClear()
+    withoutCalendarWrite()
+    const calendar = connect().calendar
+
+    await expect(calendar.upcoming(new Date('2026-11-25T12:00:00Z'))).resolves.toEqual([])
+    await expect(calendar.upcoming(new Date('2026-11-25T12:05:00Z'))).resolves.toEqual([])
+
+    // The second read goes straight to the scopes that worked.
+    expect(scopesAsked()).toEqual([
+      [...BASE, 'Calendars.ReadWrite'],
+      [...BASE, 'Calendars.Read'],
+      [...BASE, 'Calendars.Read']
+    ])
+  })
+
+  it('adds meetings with every scope and needs a reconnect when Microsoft wants consent, while reading still works', async () => {
+    const { ReconnectRequiredError } = await import('../src/main/app/ports')
+    fetchMock.mockImplementation(async () => respond(200, { value: [] }))
+    msal.acquireTokenSilent.mockClear()
+    withoutCalendarWrite()
+    const calendar = connect().calendar
+
+    const error = await calendar
+      .createEvent({ title: 'Revisión', start: '2026-11-26T15:00:00.000Z', end: '2026-11-26T15:30:00.000Z' })
+      .catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ReconnectRequiredError)
+    expect((error as Error).message).toBe('Reconecta esta cuenta para agregar reuniones.')
+    expect(scopesAsked()[0]).toEqual(READ_WRITE)
+    expect(fetchMock).not.toHaveBeenCalled()
+    await expect(calendar.upcoming(new Date('2026-11-25T12:00:00Z'))).resolves.toEqual([])
+  })
+})
+
+describe('Outlook new meetings through Microsoft Graph', () => {
+  const NEW = { title: 'Revisión', start: '2026-11-26T15:00:00.000Z', end: '2026-11-26T15:30:00.000Z', location: 'Sala 2' }
+
+  it('posts the event to /me/events with UTC times, the subject and the location', async () => {
+    fetchMock.mockImplementation(async () =>
+      respond(201, {
+        id: 'ev-1',
+        subject: 'Revisión',
+        start: { dateTime: '2026-11-26T15:00:00.0000000', timeZone: 'UTC' },
+        end: { dateTime: '2026-11-26T15:30:00.0000000', timeZone: 'UTC' },
+        location: { displayName: 'Sala 2' }
+      })
     )
+
+    const created = await connect().calendar.createEvent(NEW)
+
+    const [call] = calls()
+    expect(call?.method).toBe('POST')
+    expect(call?.url).toBe(`${GRAPH}/me/events`)
+    expect(call?.headers.Prefer).toBe('outlook.timezone="UTC"')
+    expect(call?.body).toEqual({
+      subject: 'Revisión',
+      start: { dateTime: '2026-11-26T15:00:00.000', timeZone: 'UTC' },
+      end: { dateTime: '2026-11-26T15:30:00.000', timeZone: 'UTC' },
+      location: { displayName: 'Sala 2' }
+    })
+    expect(created).toEqual({
+      id: 'acc-1:ev-1',
+      accountId: 'acc-1',
+      title: 'Revisión',
+      start: '2026-11-26T15:00:00.000Z',
+      end: '2026-11-26T15:30:00.000Z',
+      location: 'Sala 2'
+    })
+  })
+
+  it('leaves the location out when there is none', async () => {
+    fetchMock.mockImplementation(async () =>
+      respond(201, { id: 'ev-2', subject: 'Café', start: { dateTime: '2026-11-26T15:00:00' }, end: { dateTime: '2026-11-26T15:30:00' } })
+    )
+    await connect().calendar.createEvent({ title: 'Café', start: NEW.start, end: NEW.end })
+    expect(calls()[0]?.body).not.toHaveProperty('location')
+  })
+
+  it('turns a 403 ErrorAccessDenied into ReconnectRequiredError', async () => {
+    const { ReconnectRequiredError } = await import('../src/main/app/ports')
+    fetchMock.mockImplementation(async () => respond(403, { error: { code: 'ErrorAccessDenied', message: 'Access is denied.' } }))
+    const error = await connect().calendar.createEvent(NEW).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ReconnectRequiredError)
+    expect((error as Error).message).toBe('Reconecta esta cuenta para agregar reuniones.')
   })
 })
 

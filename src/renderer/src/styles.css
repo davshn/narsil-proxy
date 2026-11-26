@@ -641,6 +641,65 @@ textarea {
   color: var(--accent-text);
 }
 
+.meetings__head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+/* "Agregar reunión": the same card as the rule form. */
+.meeting-form {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--surface-2);
+  border-radius: 10px;
+}
+
+.meeting-form h3 {
+  margin: 0;
+  font: 600 15px/1.3 var(--font-display);
+}
+
+.meeting-form label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.meeting-form input,
+.meeting-form select {
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-3);
+  color: var(--text-0);
+  font-variant-numeric: tabular-nums;
+  color-scheme: inherit;
+}
+
+.meeting-form__when {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 8px;
+}
+
+.meeting-form__error {
+  margin: 0;
+  color: var(--danger-text);
+  font-size: 13px;
+}
+
+.meeting-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 /* ---------- Setup ---------- */
 
 .setup__intro {

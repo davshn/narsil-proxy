@@ -216,7 +216,9 @@ export function App(): React.JSX.Element {
 
       <section className="panel__body">
         {tab === 'setup' && <Setup status={status} />}
-        {tab === 'meetings' && <Meetings meetings={meetings} accountLabel={accountLabel} />}
+        {tab === 'meetings' && (
+          <Meetings meetings={meetings} accounts={status.accounts} accountLabel={accountLabel} onCreated={celebrate} />
+        )}
         {tab === 'rules' && (
           <Rules
             rules={rules}

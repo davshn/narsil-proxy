@@ -5,7 +5,7 @@ interface ReconnectNoticeProps {
   account: Account
 }
 
-/** Shown for an account connected before Narsil asked for the rule permission. */
+/** Shown for an account connected before Narsil asked for the rule and calendar write permissions. */
 export function ReconnectNotice({ account }: ReconnectNoticeProps): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -20,7 +20,7 @@ export function ReconnectNotice({ account }: ReconnectNoticeProps): React.JSX.El
 
   return (
     <div className="reconnect" role="status">
-      <p className="reconnect__text">Reconecta esta cuenta para administrar sus reglas.</p>
+      <p className="reconnect__text">Reconecta esta cuenta para administrar sus reglas y agregar reuniones.</p>
       <button
         type="button"
         className="btn btn--primary"

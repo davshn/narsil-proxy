@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Theme } from '@shared/dayNight'
 import { useReducedMotion, useTheme } from '../theme'
+import { petArtNames, type Pose } from './petArt'
 
-/** The drawings Narsil uses here, named as in narsilPet's assets. */
-export type Pose = 'base' | 'trabajando' | 'necesita' | 'error' | 'terminado'
+export type { Pose }
 
 export interface PoseState {
   /** The status carries an error. */
@@ -31,11 +31,11 @@ export function petPose(s: PoseState): Pose {
 // Bundled by Vite, so they load from the app itself (CSP `img-src 'self'`).
 const ART = import.meta.glob<string>('../assets/narsil/*.{png,webp}', { eager: true, import: 'default' })
 
-/** The animated loop for the pose when there is one and motion is welcome, else the still. */
+/** The animated loop for the pose when motion is welcome, else the still. */
 function artFor(pose: Pose, theme: Theme, animated: boolean): string {
-  const name = `../assets/narsil/${pose}-${theme === 'light' ? 'claro' : 'oscuro'}`
-  const loop = animated ? ART[`${name}.webp`] : undefined
-  return loop ?? ART[`${name}.png`] ?? ''
+  const { loop, still } = petArtNames(pose, theme)
+  const animation = animated ? ART[`../assets/narsil/${loop}`] : undefined
+  return animation ?? ART[`../assets/narsil/${still}`] ?? ''
 }
 
 // Like the narsilPet overlay: a drawing fades into the next, and each stays a

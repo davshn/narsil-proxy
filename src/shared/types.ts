@@ -29,7 +29,8 @@ export interface Account {
   settings: AccountSettings
   /**
    * Runtime status, never stored: the account was connected before Narsil asked for the rule
-   * permissions, so it must sign in again ("Reconectar") before its rules can be managed.
+   * or calendar write permissions, so it must sign in again ("Reconectar") before its rules
+   * can be managed or meetings added to its calendar.
    */
   needsReconnect?: boolean
 }
@@ -190,6 +191,14 @@ export interface Meeting {
   link?: string
 }
 
+/** A meeting to add to an account's primary calendar. Times are ISO 8601 instants. */
+export interface NewMeeting {
+  title: string
+  start: string
+  end: string
+  location?: string
+}
+
 export interface ReminderAlert {
   key: string
   meeting: Meeting
@@ -229,6 +238,11 @@ export interface NarsilApi {
   setAnthropicKey(key: string): Promise<ActionResult>
   getInbox(): Promise<InboxItem[]>
   getMeetings(): Promise<Meeting[]>
+  /**
+   * Adds a meeting to the account's primary calendar, then reads that calendar again. The title
+   * must not be blank and the end must come after the start.
+   */
+  createMeeting(accountId: string, input: NewMeeting): Promise<ActionResult>
   refresh(): Promise<ActionResult>
   /** `save` moves the email to `folderId`, which it requires. */
   applyAction(key: string, action: Exclude<EmailAction, 'reply'>, folderId?: string): Promise<ActionResult>
@@ -252,7 +266,7 @@ export interface NarsilApi {
   deleteServerRule(accountId: string, ruleId: string): Promise<ActionResult>
   /** Creates the server rule that replaces a local rule, then deletes the local one. */
   convertLocalRule(ruleId: string, target?: ConvertTarget): Promise<ActionResult>
-  /** Signs in again to the same account to grant the rule permissions. */
+  /** Signs in again to the same account to grant the rule and calendar write permissions. */
   reconnectAccount(accountId: string): Promise<ActionResult>
   onServerRulesChanged(listener: (rules: AccountRules[]) => void): () => void
   onRulesChanged(listener: (rules: Rule[]) => void): () => void
@@ -274,6 +288,7 @@ export const IPC = {
   setAnthropicKey: 'narsil:set-anthropic-key',
   getInbox: 'narsil:get-inbox',
   getMeetings: 'narsil:get-meetings',
+  createMeeting: 'narsil:create-meeting',
   refresh: 'narsil:refresh',
   applyAction: 'narsil:apply-action',
   listFolders: 'narsil:list-folders',

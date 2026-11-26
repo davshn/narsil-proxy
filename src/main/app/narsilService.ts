@@ -9,6 +9,7 @@ import type {
   InboxItem,
   MailFolder,
   Meeting,
+  NewMeeting,
   NewServerRule,
   ProviderKind,
   ReminderAlert,
@@ -104,6 +105,31 @@ const itemKey = (accountId: string, messageId: string): string => `${accountId}:
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
+/** Longest meeting title and location Narsil sends; the IPC layer enforces the same bounds. */
+export const MAX_MEETING_TITLE = 200
+export const MAX_MEETING_LOCATION = 200
+
+/** A new meeting with its text trimmed, or a Spanish error saying what is wrong with it. */
+function validMeeting(input: NewMeeting): NewMeeting {
+  const title = input.title.trim()
+  if (!title) throw new Error('Escribe un título para la reunión.')
+  if (title.length > MAX_MEETING_TITLE) throw new Error(`El título admite hasta ${MAX_MEETING_TITLE} caracteres.`)
+  const start = Date.parse(input.start)
+  const end = Date.parse(input.end)
+  if (Number.isNaN(start) || Number.isNaN(end)) throw new Error('La fecha o la hora no son válidas.')
+  if (end <= start) throw new Error('La hora de fin debe ser posterior a la de inicio.')
+  const location = input.location?.trim()
+  if (location && location.length > MAX_MEETING_LOCATION) {
+    throw new Error(`La ubicación admite hasta ${MAX_MEETING_LOCATION} caracteres.`)
+  }
+  return {
+    title,
+    start: new Date(start).toISOString(),
+    end: new Date(end).toISOString(),
+    ...(location ? { location } : {})
+  }
+}
+
 /**
  * Application core: polls every connected account's mail and calendar, triages mail
  * with Claude, applies user rules and fires meeting reminders.
@@ -154,6 +180,8 @@ export class NarsilService {
   private readonly serverRuleLists = new Map<string, RuleListState>()
   /** Accounts that lack the rule permission; reported in status(), never as an error. */
   private readonly reconnectNeeded = new Set<string>()
+  /** Accounts whose calendar lacks the write permission; reported in status() like the rules. */
+  private readonly meetingReconnectNeeded = new Set<string>()
   /** One reconnect sign-in per account; a second click joins it. */
   private readonly reconnecting = new Map<string, Promise<void>>()
 
@@ -216,7 +244,7 @@ export class NarsilService {
       damaged = message(error)
     }
     const status: AppStatus = {
-      accounts: accounts.map((a) => (this.reconnectNeeded.has(a.id) ? { ...a, needsReconnect: true } : a)),
+      accounts: accounts.map((a) => (this.needsReconnect(a.id) ? { ...a, needsReconnect: true } : a)),
       hasGoogleClient: this.providers.google.isConfigured(),
       hasMicrosoftClient: this.providers.microsoft.isConfigured(),
       hasAnthropicKey: this.anthropicKey() !== null
@@ -394,6 +422,7 @@ export class NarsilService {
       this.errors.delete(`${accountId}:connect`)
     }
     this.setReconnectNeeded(accountId, false)
+    this.meetingReconnectNeeded.delete(accountId)
     this.emitStatus()
     await this.loadServerRules(accountId)
   }
@@ -448,6 +477,10 @@ export class NarsilService {
     if (changed) this.emitInbox()
   }
 
+  private needsReconnect(accountId: string): boolean {
+    return this.reconnectNeeded.has(accountId) || this.meetingReconnectNeeded.has(accountId)
+  }
+
   private setReconnectNeeded(accountId: string, needed: boolean): void {
     if (this.reconnectNeeded.has(accountId) === needed) return
     if (needed) this.reconnectNeeded.add(accountId)
@@ -457,6 +490,29 @@ export class NarsilService {
 
   private emitServerRules(): void {
     this.events.serverRulesChanged(this.serverRules())
+  }
+
+  /**
+   * Adds a meeting to one account's primary calendar, then reads that calendar again so the new
+   * meeting shows and gets its reminders. A missing calendar write permission flags the account
+   * for a reconnect before the error goes on; reading its calendar keeps working.
+   */
+  async createMeeting(accountId: string, input: NewMeeting): Promise<Meeting> {
+    const meeting = validMeeting(input)
+    const connected = this.requireConnected(accountId)
+    let created: Meeting
+    try {
+      created = await connected.connection.calendar.createEvent(meeting)
+    } catch (error) {
+      if (error instanceof ReconnectRequiredError && this.isLive(connected) && !this.meetingReconnectNeeded.has(accountId)) {
+        this.meetingReconnectNeeded.add(accountId)
+        this.emitStatus()
+      }
+      throw error
+    }
+    await this.pollAccountCalendar(connected)
+    this.publishMeetings()
+    return created
   }
 
   async refresh(): Promise<void> {
@@ -668,6 +724,7 @@ export class NarsilService {
     this.announced.delete(accountId)
     this.serverRuleLists.delete(accountId)
     this.reconnectNeeded.delete(accountId)
+    this.meetingReconnectNeeded.delete(accountId)
     this.mergeMeetings()
     for (const source of [...this.errors.keys()]) if (source.startsWith(`${accountId}:`)) this.errors.delete(source)
   }
@@ -913,20 +970,24 @@ export class NarsilService {
   }
 
   private async pollCalendar(): Promise<void> {
-    await Promise.all(
-      [...this.connections.values()].map(async (connected) => {
-        const source = `${connected.account.id}:calendar`
-        try {
-          const meetings = await connected.connection.calendar.upcoming()
-          if (!this.isLive(connected)) return
-          this.meetingsByAccount.set(connected.account.id, meetings)
-          this.clearError(source)
-        } catch (error) {
-          // Keep the last known meetings of this account so its reminders still fire.
-          if (this.isLive(connected)) this.setError(source, `${connected.account.email} (calendario): ${message(error)}`)
-        }
-      })
-    )
+    await Promise.all([...this.connections.values()].map((connected) => this.pollAccountCalendar(connected)))
+    this.publishMeetings()
+  }
+
+  private async pollAccountCalendar(connected: Connected): Promise<void> {
+    const source = `${connected.account.id}:calendar`
+    try {
+      const meetings = await connected.connection.calendar.upcoming()
+      if (!this.isLive(connected)) return
+      this.meetingsByAccount.set(connected.account.id, meetings)
+      this.clearError(source)
+    } catch (error) {
+      // Keep the last known meetings of this account so its reminders still fire.
+      if (this.isLive(connected)) this.setError(source, `${connected.account.email} (calendario): ${message(error)}`)
+    }
+  }
+
+  private publishMeetings(): void {
     this.mergeMeetings()
     this.events.meetingsChanged(this.meetings)
     this.checkReminders()

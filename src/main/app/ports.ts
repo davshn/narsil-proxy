@@ -1,4 +1,4 @@
-import type { AccountSettings, MailFolder, Meeting, NewServerRule, ProviderKind, ServerRule } from '@shared/types'
+import type { AccountSettings, MailFolder, Meeting, NewMeeting, NewServerRule, ProviderKind, ServerRule } from '@shared/types'
 import type { ParsedEmail } from '../domain/email'
 
 /**
@@ -45,16 +45,27 @@ export interface CalendarProvider {
    * Each Meeting has `accountId` set and `id` = `${accountId}:${providerEventId}`.
    */
   upcoming(now?: Date): Promise<Meeting[]>
+  /**
+   * Adds an already validated meeting to the account's primary calendar and returns it as
+   * upcoming() would. Throws ReconnectRequiredError(MEETING_RECONNECT) when the account was
+   * connected before Narsil asked for the calendar write permission; reading keeps working.
+   */
+  createEvent(input: NewMeeting): Promise<Meeting>
 }
 
+/** Why an account must sign in again before meetings can be added to its calendar. */
+export const MEETING_RECONNECT = 'Reconecta esta cuenta para agregar reuniones.'
+
 /**
- * Thrown by a RuleProvider when the account was connected before Narsil asked for the rule
- * permission (Gmail `gmail.settings.basic`, Outlook `MailboxSettings.ReadWrite`). The account
- * keeps working for mail; only its rules need a new sign-in.
+ * Thrown when the account was connected before Narsil asked for a permission it now needs: the
+ * rule permission (Gmail `gmail.settings.basic`, Outlook `MailboxSettings.ReadWrite`) from a
+ * RuleProvider, or the calendar write permission (Google `calendar.events`, Outlook
+ * `Calendars.ReadWrite`) from CalendarProvider.createEvent. Mail and reading the calendar keep
+ * working; only that feature needs a new sign-in.
  */
 export class ReconnectRequiredError extends Error {
-  constructor() {
-    super('Reconecta esta cuenta para administrar sus reglas.')
+  constructor(message = 'Reconecta esta cuenta para administrar sus reglas.') {
+    super(message)
     this.name = 'ReconnectRequiredError'
   }
 }

@@ -37,9 +37,9 @@ Keep that file private. Narsil asks for these permissions:
 - `gmail.modify`: read mail, create and apply labels, archive and move to Trash (it cannot permanently delete)
 - `gmail.send`: send the replies you approve
 - `gmail.settings.basic`: list, create and delete the Gmail filters that hold your rules
-- `calendar.readonly`: read your events
+- `calendar.events`: read your events and add the meetings you create in **Reuniones**
 
-Data access: while the consent screen is in "Testing" mode, you do not need to change anything for the new `gmail.settings.basic` scope. You can optionally add it under **Google Auth Platform → Data access → Add or remove scopes**, so the consent screen lists it with the other Gmail scopes.
+Data access: while the consent screen is in "Testing" mode, you do not need to change anything for the new `gmail.settings.basic` and `calendar.events` scopes. You can optionally add it under **Google Auth Platform → Data access → Add or remove scopes**, so the consent screen lists it with the other Gmail scopes.
 
 One OAuth client serves every Google account you add. While the consent screen is in "Testing" mode, add each account as a test user. Google expires the sign-in after 7 days, so you then need to remove the account under **Cuentas** (accounts) and add it again. Setting the publishing status to **In production** removes that limit. Because Gmail scopes are restricted, Google then shows an "unverified app" warning at sign-in, which you can accept for your own account.
 
@@ -57,7 +57,7 @@ Narsil signs in to Outlook.com, Hotmail and Microsoft 365 accounts with your own
    - `Mail.ReadWrite`
    - `Mail.Send`
    - `MailboxSettings.ReadWrite` (for the Outlook inbox rules that hold your rules)
-   - `Calendars.Read`
+   - `Calendars.ReadWrite` (to read your events and add meetings; it replaces `Calendars.Read`)
    - `User.Read`
    - `offline_access`
 8. In Narsil, paste the Application (client) ID in **Ajustes**, then add your Microsoft accounts.
@@ -75,6 +75,14 @@ npm start
 
 The second command downloads the Electron runtime. Recent npm versions skip that download during `npm install`.
 
+Under `npm start` Windows labels Narsil's notifications "Electron" with Electron's icon, because the app is not installed. To get notifications from "Narsil" with her icon, install it instead:
+
+```powershell
+npm run dist
+```
+
+Then run the installer from `dist/`. It creates a **Narsil** shortcut in the Start Menu, which is how Windows learns the app's name and icon (app id `com.narsil.desktop`). Each notification shows Narsil's face, in her light or dark look depending on the hour.
+
 Narsil sits above the taskbar as a little sea serpent, drawn with the art from narsilPet. Click her to open the panel, then go to **Ajustes** (settings):
 
 1. **Elegir archivo de cliente** (choose client file): for Google accounts, pick the JSON you downloaded.
@@ -89,10 +97,10 @@ Secrets are encrypted with Windows DPAPI (Electron `safeStorage`) under `%APPDAT
 ## Using it
 
 - The number next to Narsil shows how many unread emails are waiting.
-- Her pose shows what is going on: idle, reading new mail while Claude triages it, asking for attention when mail waits or a meeting is about to start, showing an error, or celebrating for a few seconds after an action or reply succeeds.
+- Her pose shows what is going on: idle (she bobs in the water with narsilPet's `parada` loop), reading new mail while Claude triages it, asking for attention when mail waits or a meeting is about to start, showing an error, or celebrating for a few seconds after an action or reply succeeds.
 - The look follows the clock like the narsil-skin mod: a light theme from 6:00 to 17:59 and a dark theme the rest of the day, re-checked every 10 seconds. With reduced motion turned on in Windows, Narsil uses her still drawings and the theme changes without a fade.
 - Drag the bar above her, or the panel header, to move Narsil.
-- The tray icon lets you show or hide Narsil, check now, start Narsil with Windows, or quit.
+- The tray icon (narsilPet's icon) lets you show or hide Narsil, check now, start Narsil with Windows, or quit.
 - Closing the panel (the minus button) shrinks Narsil back to the docked serpent. It keeps running.
 
 ### Rules
@@ -115,7 +123,7 @@ More about server rules:
 
 #### New permissions and Reconectar
 
-Rules need one more permission: `gmail.settings.basic` for Google and `MailboxSettings.ReadWrite` for Microsoft. Accounts you added before this version never granted it. Narsil notices the first time it lists their rules and shows "Reconecta esta cuenta para administrar sus reglas" with a **Reconectar** (reconnect) button, in **Ajustes** and in **Reglas**. Click it once per account: your browser opens, you sign in with the same address and allow the new permission. Narsil keeps the account, its settings and its mail; signing in with another address is rejected and the old sign-in stays. Mail keeps working while an account waits for its reconnect.
+Rules need one more permission: `gmail.settings.basic` for Google and `MailboxSettings.ReadWrite` for Microsoft. Adding meetings needs another: `calendar.events` for Google (instead of `calendar.readonly`) and `Calendars.ReadWrite` for Microsoft (instead of `Calendars.Read`). Accounts you added before these versions never granted them. Narsil notices the first time it lists their rules or you add a meeting, and shows "Reconecta esta cuenta para administrar sus reglas y agregar reuniones" with a **Reconectar** (reconnect) button, in **Ajustes**, in **Reglas** and in the **Agregar reunión** form. Click it once per account: your browser opens, you sign in with the same address and allow the new permissions. Narsil keeps the account, its settings and its mail; signing in with another address is rejected and the old sign-in stays. Mail and reading the calendar keep working with the old permissions while an account waits for its reconnect.
 
 #### Local rules
 
@@ -124,6 +132,17 @@ Rules made with earlier versions were local: Narsil ran them on new mail before 
 - **Pasar a una cuenta…** (move to an account) creates the matching rule in an account, then deletes the local copy. If the account rejects the rule, the local rule stays.
 - A local **Mover a carpeta** rule goes to the account that owns its folder, with that folder. Any other local rule asks which account to use. A "save" rule created before folders existed ("archivar (regla anterior sin carpeta)") also asks for a folder.
 - **Activa** (enabled) and **Borrar** (delete) still work on local rules. The first enabled local rule that matches, in list order, wins, and a local **Mover a carpeta** rule only acts on the mail of its folder's account.
+
+### Meetings
+
+The **Reuniones** (meetings) tab lists the timed meetings of the next 24 hours from every account. **Agregar reunión** (add meeting) opens a form:
+
+- **Título** (title): required.
+- **Cuenta** (account): which account's main calendar gets the meeting; the first account is preselected.
+- **Fecha** (date), **Inicio** (start) and **Fin** (end): in your local time zone. Inicio starts at the next half hour and Fin 30 minutes later; moving Inicio keeps the length. Fin must be after Inicio.
+- **Ubicación** (location): optional.
+
+**Agregar** (add) creates the meeting in that calendar, then Narsil reads the calendar again so it shows in the list and gets its reminders. Problems show under the form in Spanish. An account that still has the old read-only calendar permission shows **Reconectar** there instead.
 
 ### Inbox settings
 
@@ -177,7 +196,7 @@ npm run typecheck
 npm run dist
 ```
 
-`npm run dist` builds a Windows installer in `dist/`.
+`npm run dist` builds a Windows installer in `dist/`. The app and installer icon is `resources/icon-oscuro.ico`. The tray icon and Narsil's notification faces are PNGs in `resources/`, which electron-builder copies next to the app as `resources/icons` (`extraResources`); unpackaged, Narsil reads them from the repository's `resources/` folder.
 
 ### Layout
 
@@ -194,5 +213,6 @@ src/
     index.ts               Window, tray, notifications and validated IPC handlers
   preload/index.ts         The narrow `window.narsil` bridge
   renderer/                React UI
+resources/                 App, tray and notification icons (copied next to the packaged app)
 tests/                     Vitest unit tests for the domain layer, providers and service
 ```
