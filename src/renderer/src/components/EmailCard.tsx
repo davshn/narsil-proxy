@@ -26,7 +26,8 @@ interface EmailCardProps {
   /** `save` passes the folder the email moves to. */
   onAction(key: string, action: QuickAction, folderId?: string): Promise<string | null>
   onReply(key: string, body: string): Promise<string | null>
-  onCreateRule(from: string): void
+  /** Opens a rule draft for this sender on the account that received the email. */
+  onCreateRule(from: string, accountId: string): void
 }
 
 function address(mailbox: string): string {
@@ -159,7 +160,7 @@ export function EmailCard({
             type="button"
             className="link-btn mail__rule"
             title="Crear una regla para los correos de este remitente"
-            onClick={() => onCreateRule(email.from)}
+            onClick={() => onCreateRule(email.from, email.accountId)}
           >
             Crear regla
           </button>

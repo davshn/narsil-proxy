@@ -32,10 +32,22 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function graphErrorMessage(payload: unknown): string | undefined {
+function graphErrorField(payload: unknown, field: 'message' | 'code'): string | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined
-  const error = (payload as { error?: { message?: unknown } }).error
-  return typeof error?.message === 'string' && error.message ? error.message.slice(0, MAX_ERROR_DETAIL) : undefined
+  const value = (payload as { error?: Record<string, unknown> }).error?.[field]
+  return typeof value === 'string' && value ? value.slice(0, MAX_ERROR_DETAIL) : undefined
+}
+
+/** A non-2xx Graph answer. `code` is Graph's error code, e.g. `ErrorAccessDenied`. */
+export class GraphError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string | undefined
+  ) {
+    super(message)
+    this.name = 'GraphError'
+  }
 }
 
 /** Minimal Microsoft Graph v1.0 client over the global `fetch`. */
@@ -60,8 +72,12 @@ export class GraphClient {
 
     const payload = await readJson(response)
     if (!response.ok) {
-      const detail = graphErrorMessage(payload)
-      throw new Error(`Microsoft Graph respondió con el estado ${response.status}${detail ? `: ${detail}` : '.'}`)
+      const detail = graphErrorField(payload, 'message')
+      throw new GraphError(
+        `Microsoft Graph respondió con el estado ${response.status}${detail ? `: ${detail}` : '.'}`,
+        response.status,
+        graphErrorField(payload, 'code')
+      )
     }
     return payload as T | undefined
   }

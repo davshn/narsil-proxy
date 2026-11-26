@@ -27,6 +27,11 @@ export interface Account {
   provider: ProviderKind
   email: string
   settings: AccountSettings
+  /**
+   * Runtime status, never stored: the account was connected before Narsil asked for the rule
+   * permissions, so it must sign in again ("Reconectar") before its rules can be managed.
+   */
+  needsReconnect?: boolean
 }
 
 /** A Gmail user label or an Outlook mail folder. `name` shows nesting as `Parent/Child`. */
@@ -98,6 +103,53 @@ export interface RuleInput {
   conditions: RuleConditions
   action: RuleAction
   folder?: RuleFolder
+}
+
+/** What a rule in Gmail or Outlook does with matching mail. */
+export type ServerRuleAction = 'archive' | 'delete' | 'move'
+
+/** A rule to create on an account. `move` needs `folderId`; `folderName` is for display. */
+export interface NewServerRule {
+  name: string
+  conditions: RuleConditions
+  action: ServerRuleAction
+  folderId?: string
+  folderName?: string
+}
+
+/**
+ * A Gmail filter or an Outlook inbox rule. When `managedByNarsil` is false Narsil could not map
+ * it (it was made outside Narsil with other conditions or actions): it is read-only and can
+ * only be deleted. Gmail filters have no name, so theirs is generated from the conditions.
+ */
+export interface ServerRule extends NewServerRule {
+  id: string
+  accountId: string
+  managedByNarsil: boolean
+}
+
+/** A server rule as the user edits it; with `id` it replaces that rule (remove, then create). */
+export interface ServerRuleInput extends NewServerRule {
+  id?: string
+  accountId: string
+}
+
+/** The server rules of one connected account. */
+export interface AccountRules {
+  accountId: string
+  rules: ServerRule[]
+  /** False until the first list of this account finished. */
+  loaded: boolean
+  /** The account lacks the rule permission and must be reconnected. */
+  needsReconnect: boolean
+  error?: string
+}
+
+/** Where "Pasar a una cuenta…" creates a local rule; a local save rule with a folder needs none. */
+export interface ConvertTarget {
+  accountId: string
+  folderId?: string
+  folderName?: string
 }
 
 /** One action a rule took (or tried to take) on an email. */
@@ -189,6 +241,18 @@ export interface NarsilApi {
   saveRule(input: RuleInput): Promise<ActionResult>
   deleteRule(id: string): Promise<ActionResult>
   getRuleActivity(): Promise<RuleActivity[]>
+  /** The cached server rules of every connected account. */
+  getServerRules(): Promise<AccountRules[]>
+  /** Lists every account's server rules again. */
+  reloadServerRules(): Promise<ActionResult>
+  /** Creates a rule on its account, or replaces the rule `id` (remove, then create). */
+  saveServerRule(input: ServerRuleInput): Promise<ActionResult>
+  deleteServerRule(accountId: string, ruleId: string): Promise<ActionResult>
+  /** Creates the server rule that replaces a local rule, then deletes the local one. */
+  convertLocalRule(ruleId: string, target?: ConvertTarget): Promise<ActionResult>
+  /** Signs in again to the same account to grant the rule permissions. */
+  reconnectAccount(accountId: string): Promise<ActionResult>
+  onServerRulesChanged(listener: (rules: AccountRules[]) => void): () => void
   onRulesChanged(listener: (rules: Rule[]) => void): () => void
   onRuleActivityChanged(listener: (activity: RuleActivity[]) => void): () => void
   onInboxChanged(listener: (items: InboxItem[]) => void): () => void
@@ -219,6 +283,13 @@ export const IPC = {
   saveRule: 'narsil:save-rule',
   deleteRule: 'narsil:delete-rule',
   getRuleActivity: 'narsil:get-rule-activity',
+  getServerRules: 'narsil:get-server-rules',
+  reloadServerRules: 'narsil:reload-server-rules',
+  saveServerRule: 'narsil:save-server-rule',
+  deleteServerRule: 'narsil:delete-server-rule',
+  convertLocalRule: 'narsil:convert-local-rule',
+  reconnectAccount: 'narsil:reconnect-account',
+  serverRulesChanged: 'narsil:server-rules-changed',
   rulesChanged: 'narsil:rules-changed',
   ruleActivityChanged: 'narsil:rule-activity-changed',
   inboxChanged: 'narsil:inbox-changed',

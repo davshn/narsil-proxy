@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { describeRuleAction, emailAddress, findMatchingRule, normalizeRule, ruleDraftFromEmail } from '@shared/rules'
+import {
+  describeRuleAction,
+  describeServerRuleAction,
+  emailAddress,
+  findMatchingRule,
+  normalizeRule,
+  normalizeServerRule,
+  ruleDraftFromEmail,
+  serverActionForLocal,
+  serverRuleDraftFromEmail
+} from '@shared/rules'
 import type { Rule } from '@shared/types'
 
 const email = { from: 'Ofertas Top <promo@Shop.example>', subject: '70% de descuento solo HOY', body: 'Compra ya. Darse de baja aquí.' }
@@ -138,5 +148,54 @@ describe('ruleDraftFromEmail', () => {
   it('extracts the address from a display name or a bare address', () => {
     expect(emailAddress('Ana <ANA@example.com>')).toBe('ana@example.com')
     expect(emailAddress(' bob@example.com ')).toBe('bob@example.com')
+  })
+})
+
+describe('server rules', () => {
+  const conditions = { from: ' shop.example ', subject: '', body: '' }
+
+  it('normalizes a server rule: trims conditions, names it from them and drops the folder unless it moves', () => {
+    expect(normalizeServerRule({ name: ' ', conditions, action: 'archive', folderId: 'L1', folderName: 'X' })).toEqual({
+      name: 'Remitente contiene "shop.example"',
+      conditions: { from: 'shop.example', subject: '', body: '' },
+      action: 'archive'
+    })
+    expect(normalizeServerRule({ name: 'Tienda', conditions, action: 'move', folderId: 'L1', folderName: ' Compras ' })).toEqual({
+      name: 'Tienda',
+      conditions: { from: 'shop.example', subject: '', body: '' },
+      action: 'move',
+      folderId: 'L1',
+      folderName: 'Compras'
+    })
+  })
+
+  it('rejects a server rule without conditions, and a move without a folder', () => {
+    expect(() => normalizeServerRule({ name: 'x', conditions: { from: ' ', subject: '', body: '' }, action: 'delete' })).toThrow(
+      'Agrega al menos una condición.'
+    )
+    expect(() => normalizeServerRule({ name: 'x', conditions, action: 'move' })).toThrow(
+      'Elige la carpeta donde se guardan estos correos.'
+    )
+  })
+
+  it('drafts a server rule from an email on that email account', () => {
+    expect(serverRuleDraftFromEmail(email.from, 'g2')).toEqual({
+      accountId: 'g2',
+      name: 'Correos de promo@shop.example',
+      action: 'archive',
+      conditions: { from: 'promo@shop.example', subject: '', body: '' }
+    })
+  })
+
+  it('describes server rule actions', () => {
+    expect(describeServerRuleAction({ action: 'archive' })).toBe('archivar')
+    expect(describeServerRuleAction({ action: 'delete' })).toBe('mover a la papelera')
+    expect(describeServerRuleAction({ action: 'move', folderName: 'Compras' })).toBe('mover a la carpeta "Compras"')
+  })
+
+  it('maps a local rule to the server action that replaces it', () => {
+    expect(serverActionForLocal('archive')).toBe('archive')
+    expect(serverActionForLocal('delete')).toBe('delete')
+    expect(serverActionForLocal('save')).toBe('move')
   })
 })

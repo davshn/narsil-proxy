@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { INBOX_WINDOW_DAYS, type Account, type ActionResult, type AccountSettings, type AppStatus, type InboxWindowDays, type ProviderKind } from '@shared/types'
+import { ReconnectNotice } from './ReconnectNotice'
 
 interface SetupProps {
   status: AppStatus
@@ -99,7 +100,10 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
         </li>
         <li className={status.accounts.length > 0 ? 'step step--done' : 'step'}>
           <h3>Cuentas</h3>
-          <p>Tu navegador se abre para que autorices a Narsil a leer tu correo, actuar sobre él y leer tu calendario.</p>
+          <p>
+            Tu navegador se abre para que autorices a Narsil a leer tu correo, actuar sobre él, administrar sus reglas y leer tu
+            calendario.
+          </p>
           {status.accounts.length === 0 ? (
             <p className="accounts__empty">Aún no has agregado ninguna cuenta.</p>
           ) : (
@@ -147,6 +151,7 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
                     </label>
                     {busy === `settings-${account.id}` && <span className="account__busy">Revisando…</span>}
                   </div>
+                  {account.needsReconnect && <ReconnectNotice account={account} />}
                 </li>
               ))}
             </ul>

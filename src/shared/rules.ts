@@ -1,4 +1,13 @@
-import type { Rule, RuleConditions, RuleFolder, RuleInput } from './types'
+import type {
+  NewServerRule,
+  Rule,
+  RuleAction,
+  RuleConditions,
+  RuleFolder,
+  RuleInput,
+  ServerRuleAction,
+  ServerRuleInput
+} from './types'
 
 /** Pure rule and folder logic shared by the main process (matching) and the renderer (drafts). */
 
@@ -66,23 +75,55 @@ export function describeRuleAction(rule: Pick<Rule, 'action' | 'folder'>): strin
   return rule.folder ? `mover a la carpeta "${rule.folder.name}"` : 'archivar (regla anterior sin carpeta)'
 }
 
+const NO_FOLDER = 'Elige la carpeta donde se guardan estos correos.'
+
+/** Trims every condition and rejects a set with none, which would match every email. */
+export function normalizeConditions(input: RuleConditions): RuleConditions {
+  const conditions: RuleConditions = {
+    from: input.from.trim(),
+    subject: input.subject.trim(),
+    body: input.body.trim()
+  }
+  if (!hasConditions(conditions)) throw new Error('Agrega al menos una condición.')
+  return conditions
+}
+
+/**
+ * Trims a server rule and rejects one without conditions. A move needs a folder; any other
+ * action drops it. An empty name becomes a description of the conditions.
+ */
+export function normalizeServerRule(input: NewServerRule): NewServerRule {
+  const conditions = normalizeConditions(input.conditions)
+  const name = input.name.trim() || describeConditions(conditions)
+  if (input.action !== 'move') return { name, conditions, action: input.action }
+  if (!input.folderId) throw new Error(NO_FOLDER)
+  return { name, conditions, action: 'move', folderId: input.folderId, folderName: input.folderName?.trim() ?? '' }
+}
+
+/** What a server rule does, in lower case, for the rule list. */
+export function describeServerRuleAction(rule: Pick<NewServerRule, 'action' | 'folderName'>): string {
+  if (rule.action === 'delete') return 'mover a la papelera'
+  if (rule.action === 'archive') return 'archivar'
+  return rule.folderName ? `mover a la carpeta "${rule.folderName}"` : 'mover a una carpeta'
+}
+
+/** The server action that replaces a local rule's action: a local save becomes a move. */
+export function serverActionForLocal(action: RuleAction): ServerRuleAction {
+  return action === 'save' ? 'move' : action
+}
+
 /**
  * Trims the input and rejects a rule with no conditions, which would match every email.
  * A save rule needs a folder, unless `keepLegacySave` keeps an old save rule that never had
  * one (it archives); any other action drops the folder.
  */
 export function normalizeRule(input: RuleInput, id: string, keepLegacySave = false): Rule {
-  const conditions: RuleConditions = {
-    from: input.conditions.from.trim(),
-    subject: input.conditions.subject.trim(),
-    body: input.conditions.body.trim()
-  }
-  if (!hasConditions(conditions)) throw new Error('Agrega al menos una condición.')
+  const conditions = normalizeConditions(input.conditions)
   let folder: RuleFolder | undefined
   if (input.action === 'save' && input.folder?.id && input.folder.accountId) {
     folder = { accountId: input.folder.accountId, id: input.folder.id, name: input.folder.name.trim() }
   } else if (input.action === 'save' && !keepLegacySave) {
-    throw new Error('Elige la carpeta donde se guardan estos correos.')
+    throw new Error(NO_FOLDER)
   }
   return {
     id,
@@ -100,6 +141,17 @@ export function ruleDraftFromEmail(from: string): RuleInput {
   return {
     name: `Correos de ${address}`,
     enabled: true,
+    action: 'archive',
+    conditions: { from: address, subject: '', body: '' }
+  }
+}
+
+/** A server rule about one sender on the account that received the email ("Crear regla"). */
+export function serverRuleDraftFromEmail(from: string, accountId: string): ServerRuleInput {
+  const address = emailAddress(from)
+  return {
+    accountId,
+    name: `Correos de ${address}`,
     action: 'archive',
     conditions: { from: address, subject: '', body: '' }
   }

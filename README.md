@@ -36,7 +36,10 @@ Keep that file private. Narsil asks for these permissions:
 
 - `gmail.modify`: read mail, create and apply labels, archive and move to Trash (it cannot permanently delete)
 - `gmail.send`: send the replies you approve
+- `gmail.settings.basic`: list, create and delete the Gmail filters that hold your rules
 - `calendar.readonly`: read your events
+
+Data access: while the consent screen is in "Testing" mode, you do not need to change anything for the new `gmail.settings.basic` scope. You can optionally add it under **Google Auth Platform → Data access → Add or remove scopes**, so the consent screen lists it with the other Gmail scopes.
 
 One OAuth client serves every Google account you add. While the consent screen is in "Testing" mode, add each account as a test user. Google expires the sign-in after 7 days, so you then need to remove the account under **Cuentas** (accounts) and add it again. Setting the publishing status to **In production** removes that limit. Because Gmail scopes are restricted, Google then shows an "unverified app" warning at sign-in, which you can accept for your own account.
 
@@ -53,6 +56,7 @@ Narsil signs in to Outlook.com, Hotmail and Microsoft 365 accounts with your own
 7. Under **API permissions → Add a permission → Microsoft Graph → Delegated permissions**, add:
    - `Mail.ReadWrite`
    - `Mail.Send`
+   - `MailboxSettings.ReadWrite` (for the Outlook inbox rules that hold your rules)
    - `Calendars.Read`
    - `User.Read`
    - `offline_access`
@@ -93,16 +97,33 @@ Secrets are encrypted with Windows DPAPI (Electron `safeStorage`) under `%APPDAT
 
 ### Rules
 
-The **Reglas** (rules) tab holds rules you define, such as "sender contains `shop.example`: move to Trash". Each rule has up to three case-insensitive "contains" conditions (sender, subject, body text). All the conditions you fill in must match, and a rule needs at least one. Its action is move to a folder (**Mover a carpeta**), archive, or move to Trash.
+Rules live in your accounts: each rule is a Gmail filter or an Outlook inbox rule on one account, so it keeps working with your PC off. Narsil only manages them. The **Reglas** (rules) tab shows **Reglas en tus cuentas** (rules in your accounts), grouped by account.
 
-- Rules run on every new email **before** Claude sees it, so a handled email never costs an API call and never appears in the list.
-- Saving a rule also applies it to the emails already in the list.
-- The first enabled rule that matches, in list order, wins.
-- **Crear regla** (create rule) on an email opens the form prefilled with its sender.
-- **Actividad reciente** (recent activity) lists the last 50 actions rules took, including failures. A failed action leaves the email in the list.
-- Rules only run while Narsil is open. They are stored as plain JSON in `%APPDATA%\narsil-proxy\rules.json`.
+**Nueva regla** (new rule) opens a form with:
 
-Rules apply to the mail of every connected account, except **Mover a carpeta**: a folder belongs to one account, so that rule only acts on that account's mail. A "save" rule created before folders existed has no folder; it archives, and the rule list says so ("archivar (regla anterior sin carpeta)"). Editing it lets you pick a folder. They never delete permanently: "Eliminar" moves the email to Trash in Gmail, where it stays for 30 days, or to Deleted Items in Outlook.
+- **Cuenta** (account): the account that stores the rule.
+- Up to three case-insensitive "contains" conditions: sender, subject and body text. All the conditions you fill in must match, and a rule needs at least one.
+- **Acción** (action): **Mover a carpeta** (move to a folder, which you pick or create in the folder list), **Archivar** (archive) or **Eliminar** (move to Trash in Gmail, or to Deleted Items in Outlook; never a permanent delete).
+
+More about server rules:
+
+- Creating a rule also applies it once to that account's emails already in the list, and **Actividad reciente** (recent activity) logs each of those actions. After that, Gmail or Outlook applies it to new mail.
+- **Editar** (edit) deletes the rule and creates it again, because Gmail filters cannot be updated.
+- Gmail filters have no name, so Narsil names them after their conditions.
+- Filters or rules you made outside Narsil with other conditions or actions show as read-only. You can still delete them.
+- **Crear regla** (create rule) on an email opens the form prefilled with its sender, on the account that received it.
+
+#### New permissions and Reconectar
+
+Rules need one more permission: `gmail.settings.basic` for Google and `MailboxSettings.ReadWrite` for Microsoft. Accounts you added before this version never granted it. Narsil notices the first time it lists their rules and shows "Reconecta esta cuenta para administrar sus reglas" with a **Reconectar** (reconnect) button, in **Ajustes** and in **Reglas**. Click it once per account: your browser opens, you sign in with the same address and allow the new permission. Narsil keeps the account, its settings and its mail; signing in with another address is rejected and the old sign-in stays. Mail keeps working while an account waits for its reconnect.
+
+#### Local rules
+
+Rules made with earlier versions were local: Narsil ran them on new mail before Claude saw it, only while it was open. They are stored in `%APPDATA%\narsil-proxy\rules.json` and show under **Reglas locales** (local rules), where they keep running as before until you move them:
+
+- **Pasar a una cuenta…** (move to an account) creates the matching rule in an account, then deletes the local copy. If the account rejects the rule, the local rule stays.
+- A local **Mover a carpeta** rule goes to the account that owns its folder, with that folder. Any other local rule asks which account to use. A "save" rule created before folders existed ("archivar (regla anterior sin carpeta)") also asks for a folder.
+- **Activa** (enabled) and **Borrar** (delete) still work on local rules. The first enabled local rule that matches, in list order, wins, and a local **Mover a carpeta** rule only acts on the mail of its folder's account.
 
 ### Inbox settings
 
@@ -165,7 +186,8 @@ src/
   shared/types.ts          Types and IPC channel names shared by every process
   main/
     domain/                Pure logic with unit tests: reminders, email parsing, reply MIME, triage prompt
-    adapters/              Google (OAuth loopback + PKCE, Gmail, Calendar), Microsoft (Graph), Claude, encrypted store
+    adapters/              Google (OAuth loopback + PKCE, Gmail, Gmail filters, Calendar), Microsoft (Graph mail,
+                           inbox rules, calendar), Claude, encrypted store
     app/ports.ts           The provider port every account type implements
     app/accounts.ts        The account list and the legacy Google account migration
     app/narsilService.ts   Polling every account, triage queue, rules and reminder scheduling

@@ -5,18 +5,31 @@ import {
   PublicClientApplication,
   type AccountInfo,
   type AuthenticationResult,
-  type ICachePlugin
+  type ICachePlugin,
+  type InteractiveRequest
 } from '@azure/msal-node'
-import type { AccountConnection, AddedAccount, ProviderAuth } from '../../app/ports'
+import { ReconnectRequiredError, type AccountConnection, type AddedAccount, type ProviderAuth } from '../../app/ports'
 import type { SecretName, SecureStore } from '../secureStore'
 import { GraphClient } from './graphClient'
 import { OutlookCalendar } from './outlookCalendar'
 import { OutlookMail } from './outlookMail'
+import { OutlookRules } from './outlookRules'
 
 /** `common` accepts both personal Microsoft accounts and work or school accounts. */
 export const MICROSOFT_AUTHORITY = 'https://login.microsoftonline.com/common'
 
-export const MICROSOFT_SCOPES = ['Mail.ReadWrite', 'Mail.Send', 'Calendars.Read', 'User.Read', 'offline_access']
+/** What mail and calendar need; accounts connected before rules lived in Outlook granted only these. */
+export const MAIL_SCOPES = ['Mail.ReadWrite', 'Mail.Send', 'Calendars.Read', 'User.Read', 'offline_access']
+
+/** Every scope a sign-in asks for: MailboxSettings.ReadWrite lets Narsil manage inbox rules. */
+export const MICROSOFT_SCOPES = [
+  'Mail.ReadWrite',
+  'Mail.Send',
+  'MailboxSettings.ReadWrite',
+  'Calendars.Read',
+  'User.Read',
+  'offline_access'
+]
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const LOGIN_TIMEOUT_MS = 5 * 60_000
@@ -57,6 +70,8 @@ export class MicrosoftProvider implements ProviderAuth {
   readonly kind = 'microsoft'
   private app: PublicClientApplication | null = null
   private pending: Promise<AddedAccount> | null = null
+  /** The reconnect sign-in in flight per account; a second click joins it. */
+  private readonly reconnecting = new Map<string, Promise<void>>()
   /**
    * Accounts returned by addAccount that the core has not connected yet. If the core rejects one
    * (for example a duplicate), it shares the MSAL cache entry of an account that is still in use,
@@ -83,6 +98,52 @@ export class MicrosoftProvider implements ProviderAuth {
       this.pending = null
     })
     return this.pending
+  }
+
+  reconnect(accountId: string, email: string): Promise<void> {
+    let pending = this.reconnecting.get(accountId)
+    if (!pending) {
+      pending = this.runReconnect(accountId, email).finally(() => this.reconnecting.delete(accountId))
+      this.reconnecting.set(accountId, pending)
+    }
+    return pending
+  }
+
+  /**
+   * Signs in again as the account mapped to `accountId`, asking for every scope; MSAL replaces
+   * its tokens in the shared cache. Another mailbox is rejected and its new cache entry dropped.
+   */
+  private async runReconnect(accountId: string, email: string): Promise<void> {
+    let homeAccountId: string | null
+    try {
+      homeAccountId = this.store.get(accountSecret(accountId))
+    } catch {
+      homeAccountId = null
+    }
+    if (!homeAccountId) throw new Error('Esta cuenta ya no está conectada.')
+    const app = this.getApp()
+    if (!app) throw new Error('Primero configura el Application (client) ID de Microsoft.')
+    let current: AccountInfo | null
+    try {
+      current = await app.getTokenCache().getAccountByHomeId(homeAccountId)
+    } catch {
+      current = null
+    }
+    const result = await this.signIn(app, current ? { account: current } : { loginHint: email })
+    const account = result.account
+    if (!account) throw new Error('Microsoft no devolvió una cuenta al iniciar sesión.')
+    const signedIn = (await this.mailboxAddress(result.accessToken)) ?? account.username
+    const sameAccount = account.homeAccountId === homeAccountId
+    if (!sameAccount && signedIn.toLowerCase() !== email.trim().toLowerCase()) {
+      if (!this.mappedAccountId(account.homeAccountId)) {
+        await app
+          .getTokenCache()
+          .removeAccount(account)
+          .catch(() => undefined)
+      }
+      throw new Error(`Iniciaste sesión con ${signedIn}, pero esta cuenta es ${email}. Vuelve a intentarlo con ${email}.`)
+    }
+    if (!sameAccount) this.store.set(accountSecret(accountId), account.homeAccountId)
   }
 
   async removeAccount(accountId: string): Promise<void> {
@@ -120,17 +181,45 @@ export class MicrosoftProvider implements ProviderAuth {
     const app = this.getApp()
     if (!homeAccountId || !app) return null
     this.unconnected.delete(accountId)
-    const graph = new GraphClient(() => this.accessToken(app, homeAccountId))
-    return { mail: new OutlookMail(graph, accountId), calendar: new OutlookCalendar(graph, accountId) }
+    const graph = new GraphClient(() => this.accessToken(app, homeAccountId, MAIL_SCOPES))
+    // Rules need MailboxSettings.ReadWrite, which older accounts never granted: ask for it apart,
+    // so a missing consent only blocks the rules and never the mail.
+    const rulesGraph = new GraphClient(() => this.accessToken(app, homeAccountId, MICROSOFT_SCOPES, true))
+    return {
+      mail: new OutlookMail(graph, accountId),
+      calendar: new OutlookCalendar(graph, accountId),
+      rules: new OutlookRules(rulesGraph, accountId)
+    }
   }
 
   private async runAddAccount(): Promise<AddedAccount> {
     const app = this.getApp()
     if (!app) throw new Error('Primero configura el Application (client) ID de Microsoft.')
+    const result = await this.signIn(app, { prompt: 'select_account' })
 
+    const account = result.account
+    if (!account) throw new Error('Microsoft no devolvió una cuenta al iniciar sesión.')
+    const email = (await this.mailboxAddress(result.accessToken)) ?? account.username
+    if (!email) throw new Error('No se pudo leer la dirección de correo de la cuenta de Microsoft.')
+
+    // The same Microsoft account signed in again keeps its id, whatever address /me returned.
+    const existing = this.mappedAccountId(account.homeAccountId)
+    if (existing) return { accountId: existing, email }
+
+    const accountId = randomUUID()
+    this.store.set(accountSecret(accountId), account.homeAccountId)
+    this.unconnected.add(accountId)
+    return { accountId, email }
+  }
+
+  /** The interactive browser sign-in with every scope, timed out after LOGIN_TIMEOUT_MS. */
+  private async signIn(
+    app: PublicClientApplication,
+    extra: Pick<InteractiveRequest, 'prompt' | 'account' | 'loginHint'>
+  ): Promise<AuthenticationResult> {
     const interactive = app.acquireTokenInteractive({
+      ...extra,
       scopes: MICROSOFT_SCOPES,
-      prompt: 'select_account',
       openBrowser: async (url) => {
         try {
           await shell.openExternal(url)
@@ -148,20 +237,7 @@ export class MicrosoftProvider implements ProviderAuth {
       if (error instanceof SignInTimeoutError) this.discardLateSignIn(app, interactive)
       throw new Error(`Falló el inicio de sesión en Microsoft: ${errorText(error)}`)
     }
-
-    const account = result.account
-    if (!account) throw new Error('Microsoft no devolvió una cuenta al iniciar sesión.')
-    const email = (await this.mailboxAddress(result.accessToken)) ?? account.username
-    if (!email) throw new Error('No se pudo leer la dirección de correo de la cuenta de Microsoft.')
-
-    // The same Microsoft account signed in again keeps its id, whatever address /me returned.
-    const existing = this.mappedAccountId(account.homeAccountId)
-    if (existing) return { accountId: existing, email }
-
-    const accountId = randomUUID()
-    this.store.set(accountSecret(accountId), account.homeAccountId)
-    this.unconnected.add(accountId)
-    return { accountId, email }
+    return result
   }
 
   /** The Narsil account id mapped to an MSAL `homeAccountId`, ignoring `except`. */
@@ -201,7 +277,13 @@ export class MicrosoftProvider implements ProviderAuth {
     }
   }
 
-  private async accessToken(app: PublicClientApplication, homeAccountId: string): Promise<string> {
+  /** A token for `scopes`; for the rules, a needed consent means the account must reconnect. */
+  private async accessToken(
+    app: PublicClientApplication,
+    homeAccountId: string,
+    scopes: string[],
+    forRules = false
+  ): Promise<string> {
     let account: AccountInfo | null
     try {
       account = await app.getTokenCache().getAccountByHomeId(homeAccountId)
@@ -210,9 +292,10 @@ export class MicrosoftProvider implements ProviderAuth {
     }
     if (!account) throw new Error('La sesión de esta cuenta de Microsoft ya no existe; quítala y vuelve a agregarla.')
     try {
-      const result = await app.acquireTokenSilent({ account, scopes: MICROSOFT_SCOPES })
+      const result = await app.acquireTokenSilent({ account, scopes })
       return result.accessToken
     } catch (error) {
+      if (forRules && error instanceof InteractionRequiredAuthError) throw new ReconnectRequiredError()
       if (error instanceof InteractionRequiredAuthError) {
         throw new Error('Microsoft pide volver a iniciar sesión en esta cuenta; quítala y vuelve a agregarla.')
       }

@@ -137,7 +137,7 @@ describe('MicrosoftProvider accounts', () => {
     expect(store.get(`microsoft-account.${a.accountId}`)).toBe('home-1')
     expect(msal.acquireTokenInteractive).toHaveBeenCalledTimes(1)
     expect(msal.acquireTokenInteractive.mock.calls[0]?.[0]).toMatchObject({
-      scopes: ['Mail.ReadWrite', 'Mail.Send', 'Calendars.Read', 'User.Read', 'offline_access']
+      scopes: ['Mail.ReadWrite', 'Mail.Send', 'MailboxSettings.ReadWrite', 'Calendars.Read', 'User.Read', 'offline_access']
     })
   })
 
@@ -470,5 +470,213 @@ describe('Outlook calendar through Microsoft Graph', () => {
     expect(url.searchParams.get('endDateTime')).toBe('2026-11-26T12:00:00.000Z')
     expect(url.searchParams.get('$top')).toBe('50')
     expect(call?.headers.Prefer).toBe('outlook.timezone="UTC"')
+  })
+})
+
+describe('Microsoft scopes', () => {
+  it('keeps mail on the mail scopes, so an account without the rule permission still polls', async () => {
+    fetchMock.mockImplementation(async () => respond(200, { value: [] }))
+    msal.acquireTokenSilent.mockClear()
+
+    await connect().mail.listUnread({ includeCategories: false, windowDays: 2 })
+
+    expect(msal.acquireTokenSilent).toHaveBeenCalledWith(
+      expect.objectContaining({ scopes: ['Mail.ReadWrite', 'Mail.Send', 'Calendars.Read', 'User.Read', 'offline_access'] })
+    )
+  })
+})
+
+describe('Outlook inbox rules through Microsoft Graph', () => {
+  const RULES = `${GRAPH}/me/mailFolders/inbox/messageRules`
+  const when = { from: 'shop.example', subject: '', body: '' }
+
+  /** Graph with an Archive folder, existing rules and one named folder. */
+  function ruleServer(rules: unknown[] = [{ id: 'r1', sequence: 3 }, { id: 'r2', sequence: 1 }]): void {
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = new URL(String(input))
+      const path = decodeURIComponent(url.pathname.replace('/v1.0', ''))
+      const method = init?.method ?? 'GET'
+      if (path === '/me/mailFolders/archive') return respond(200, { id: 'id-archive' })
+      if (path === '/me/mailFolders/id-work') return respond(200, { id: 'id-work', displayName: 'Trabajo' })
+      if (path === '/me/mailFolders/inbox/messageRules' && method === 'GET') return respond(200, { value: rules })
+      if (path === '/me/mailFolders/inbox/messageRules' && method === 'POST') return respond(201, { id: 'r-new' })
+      if (path.startsWith('/me/mailFolders/inbox/messageRules/') && method === 'DELETE') return respond(204)
+      return respond(404, { error: { code: 'ErrorItemNotFound', message: `unexpected ${method} ${path}` } })
+    })
+  }
+
+  const posted = (): unknown => calls().find((c) => c.method === 'POST')?.body
+
+  it('creates an archive rule that moves to the Archive folder looked up by its well-known name', async () => {
+    ruleServer()
+
+    const created = await connect().rules.create({ name: 'Tienda', conditions: when, action: 'archive' })
+
+    expect(calls().some((c) => c.url === `${GRAPH}/me/mailFolders/archive?$select=id`)).toBe(true)
+    expect(posted()).toEqual({
+      displayName: 'Tienda',
+      sequence: 4,
+      isEnabled: true,
+      stopProcessingRules: false,
+      conditions: { senderContains: ['shop.example'] },
+      actions: { moveToFolder: 'id-archive' }
+    })
+    expect(created).toEqual({
+      id: 'r-new',
+      accountId: 'acc-1',
+      name: 'Tienda',
+      conditions: when,
+      action: 'archive',
+      managedByNarsil: true
+    })
+  })
+
+  it('creates move and delete rules with every filled condition', async () => {
+    ruleServer([])
+    const conditions = { from: 'a.example', subject: 'factura', body: 'pago' }
+
+    await connect().rules.create({ name: 'Mover', conditions, action: 'move', folderId: 'id-work', folderName: 'Trabajo' })
+    expect(posted()).toEqual({
+      displayName: 'Mover',
+      sequence: 1,
+      isEnabled: true,
+      stopProcessingRules: false,
+      conditions: { senderContains: ['a.example'], subjectContains: ['factura'], bodyContains: ['pago'] },
+      actions: { moveToFolder: 'id-work' }
+    })
+    expect(calls().some((c) => c.url.includes('/mailFolders/archive'))).toBe(false)
+
+    fetchMock.mockClear()
+    await connect().rules.create({ name: 'Borrar', conditions: { from: '', subject: 'promo', body: '' }, action: 'delete' })
+    expect(posted()).toMatchObject({ conditions: { subjectContains: ['promo'] }, actions: { delete: true } })
+  })
+
+  it('removes a rule by id', async () => {
+    ruleServer()
+    await connect().rules.remove('r/1')
+    expect(calls().map(({ method, url }) => ({ method, url }))).toEqual([{ method: 'DELETE', url: `${RULES}/r%2F1` }])
+  })
+
+  it('lists rules, telling archive from move and naming the move folder', async () => {
+    ruleServer([
+      { id: 'r1', displayName: 'Archivar tienda', conditions: { senderContains: ['shop.example'] }, actions: { moveToFolder: 'id-archive' } },
+      {
+        id: 'r2',
+        displayName: 'Trabajo',
+        conditions: { subjectContains: ['informe'] },
+        actions: { moveToFolder: 'id-work', stopProcessingRules: false }
+      },
+      { id: 'r3', displayName: 'Promos', conditions: { bodyContains: ['baja'] }, actions: { delete: true } }
+    ])
+
+    expect(await connect().rules.list()).toEqual([
+      { id: 'r1', accountId: 'acc-1', name: 'Archivar tienda', conditions: when, action: 'archive', managedByNarsil: true },
+      {
+        id: 'r2',
+        accountId: 'acc-1',
+        name: 'Trabajo',
+        conditions: { from: '', subject: 'informe', body: '' },
+        action: 'move',
+        folderId: 'id-work',
+        folderName: 'Trabajo',
+        managedByNarsil: true
+      },
+      {
+        id: 'r3',
+        accountId: 'acc-1',
+        name: 'Promos',
+        conditions: { from: '', subject: '', body: 'baja' },
+        action: 'delete',
+        managedByNarsil: true
+      }
+    ])
+  })
+
+  it('shows rules Narsil cannot map as read-only', async () => {
+    ruleServer([
+      {
+        id: 'u1',
+        displayName: 'De jefe',
+        conditions: { fromAddresses: [{ emailAddress: { address: 'jefe@example.com' } }] },
+        actions: { moveToFolder: 'id-work' }
+      },
+      { id: 'u2', displayName: 'Leer', conditions: { senderContains: ['a.example'] }, actions: { markAsRead: true } },
+      { id: 'u3', displayName: 'Dos remitentes', conditions: { senderContains: ['a.example', 'b.example'] }, actions: { delete: true } },
+      {
+        id: 'u4',
+        displayName: 'Con excepción',
+        conditions: { senderContains: ['a.example'] },
+        exceptions: { subjectContains: ['x'] },
+        actions: { delete: true }
+      }
+    ])
+
+    const listed = await connect().rules.list()
+
+    expect(listed.map((r) => [r.id, r.managedByNarsil])).toEqual([
+      ['u1', false],
+      ['u2', false],
+      ['u3', false],
+      ['u4', false]
+    ])
+    expect(listed[0]).toMatchObject({ name: 'De jefe', action: 'move', folderName: 'Trabajo' })
+  })
+
+  it('turns a 403 ErrorAccessDenied on the rules into ReconnectRequiredError', async () => {
+    const { ReconnectRequiredError } = await import('../src/main/app/ports')
+    fetchMock.mockImplementation(async () => respond(403, { error: { code: 'ErrorAccessDenied', message: 'Access is denied.' } }))
+    await expect(connect().rules.list()).rejects.toBeInstanceOf(ReconnectRequiredError)
+  })
+
+  it('asks for the rule scope silently and needs a reconnect when Microsoft wants consent', async () => {
+    const { ReconnectRequiredError } = await import('../src/main/app/ports')
+    msal.acquireTokenSilent.mockImplementationOnce(async () => {
+      throw new msal.InteractionRequiredAuthError('consent_required')
+    })
+
+    await expect(connect().rules.list()).rejects.toBeInstanceOf(ReconnectRequiredError)
+    expect(msal.acquireTokenSilent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scopes: expect.arrayContaining(['MailboxSettings.ReadWrite']) })
+    )
+  })
+})
+
+describe('MicrosoftProvider reconnect', () => {
+  it('signs in again as the same account with the rule scope, keeping the account id', async () => {
+    msal.acquireTokenInteractive.mockResolvedValue({ accessToken: 'secret-token', account: msal.account })
+    fetchMock.mockImplementation(async () => respond(200, { mail: 'ana@outlook.com' }))
+    const store = connectedStore()
+
+    await new MicrosoftProvider(store).reconnect('acc-1', 'Ana@outlook.com')
+
+    expect(msal.acquireTokenInteractive).toHaveBeenCalledTimes(1)
+    expect(msal.acquireTokenInteractive.mock.calls[0]?.[0]).toMatchObject({
+      account: msal.account,
+      scopes: expect.arrayContaining(['MailboxSettings.ReadWrite', 'Mail.ReadWrite'])
+    })
+    expect(store.list('microsoft-account.')).toEqual(['microsoft-account.acc-1'])
+    expect(store.get('microsoft-account.acc-1')).toBe('home-1')
+    expect(msal.cache.removeAccount).not.toHaveBeenCalled()
+  })
+
+  it('rejects another mailbox in Spanish, keeps the old mapping and drops the new cache account', async () => {
+    const other = { homeAccountId: 'home-2', username: 'otro@outlook.com' }
+    msal.acquireTokenInteractive.mockResolvedValue({ accessToken: 'secret-token', account: other })
+    fetchMock.mockImplementation(async () => respond(200, { mail: 'otro@outlook.com' }))
+    const store = connectedStore()
+
+    await expect(new MicrosoftProvider(store).reconnect('acc-1', 'ana@outlook.com')).rejects.toThrow(
+      'Iniciaste sesión con otro@outlook.com, pero esta cuenta es ana@outlook.com. Vuelve a intentarlo con ana@outlook.com.'
+    )
+    expect(store.get('microsoft-account.acc-1')).toBe('home-1')
+    expect(store.list('microsoft-account.')).toEqual(['microsoft-account.acc-1'])
+    expect(msal.cache.removeAccount).toHaveBeenCalledWith(other)
+  })
+
+  it('refuses to reconnect an unknown account', async () => {
+    await expect(new MicrosoftProvider(connectedStore()).reconnect('missing', 'a@b.c')).rejects.toThrow(
+      'Esta cuenta ya no está conectada.'
+    )
+    expect(msal.acquireTokenInteractive).not.toHaveBeenCalled()
   })
 })

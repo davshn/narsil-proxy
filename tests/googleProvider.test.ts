@@ -32,7 +32,10 @@ async function followRedirect(url: string): Promise<void> {
 }
 
 /** A provider whose OAuth clients are real but whose network calls are stubbed. */
-function makeProvider(store: SecretStore, overrides: { openExternal?: (url: string) => Promise<void> } = {}) {
+function makeProvider(
+  store: SecretStore,
+  overrides: { openExternal?: (url: string) => Promise<void>; email?: string } = {}
+) {
   const clients: OAuth2Client[] = []
   const provider = new GoogleProvider(store, {
     createClient: ({ clientId, clientSecret }) => {
@@ -45,7 +48,7 @@ function makeProvider(store: SecretStore, overrides: { openExternal?: (url: stri
       clients.push(client)
       return client
     },
-    fetchProfileEmail: async () => 'ana@gmail.com',
+    fetchProfileEmail: async () => overrides.email ?? 'ana@gmail.com',
     newId: () => 'n1',
     openExternal: overrides.openExternal ?? followRedirect
   })
@@ -198,5 +201,71 @@ describe('GoogleProvider', () => {
 
     expect(store.data.has('google-tokens.n1')).toBe(false)
     expect(clients.every((c) => vi.mocked(c.revokeToken).mock.calls.length === 0)).toBe(true)
+  })
+
+  it('asks Google for the Gmail filter scope with the mail and calendar scopes', async () => {
+    const store = memoryStore({ 'google-client': CLIENT })
+    let scopes: string[] = []
+    const { provider } = makeProvider(store, {
+      openExternal: async (url) => {
+        scopes = (new URL(url).searchParams.get('scope') ?? '').split(' ')
+        await followRedirect(url)
+      }
+    })
+
+    await provider.addAccount()
+
+    expect(scopes).toEqual([
+      'https://www.googleapis.com/auth/gmail.modify',
+      'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/gmail.settings.basic',
+      'https://www.googleapis.com/auth/calendar.readonly'
+    ])
+  })
+
+  it('reconnects the same mailbox: replaces its tokens, keeps its id and hints the address', async () => {
+    const store = memoryStore({
+      'google-client': CLIENT,
+      'google-tokens.a1': JSON.stringify({ refresh_token: 'r1', access_token: 'old1', scope: 'gmail.modify' })
+    })
+    let hint: string | null = null
+    const { provider, clients } = makeProvider(store, {
+      openExternal: async (url) => {
+        hint = new URL(url).searchParams.get('login_hint')
+        await followRedirect(url)
+      }
+    })
+    const before = provider.connect('a1')
+
+    await provider.reconnect('a1', 'Ana@Gmail.com')
+
+    expect(hint).toBe('Ana@Gmail.com')
+    expect(JSON.parse(store.data.get('google-tokens.a1') ?? '{}')).toEqual({ access_token: 'a-new', refresh_token: 'r-new' })
+    expect(store.list('google-tokens.')).toEqual(['google-tokens.a1'])
+    expect(clients.every((c) => vi.mocked(c.revokeToken).mock.calls.length === 0)).toBe(true)
+    // The next connect builds a client with the new tokens; the old one no longer persists refreshes.
+    const after = provider.connect('a1')
+    expect(after).not.toBe(before)
+    expect(clients.at(-1)?.credentials).toMatchObject({ access_token: 'a-new' })
+    clients[0]?.emit('tokens', { access_token: 'late-old' })
+    expect(JSON.parse(store.data.get('google-tokens.a1') ?? '{}').access_token).toBe('a-new')
+  })
+
+  it('rejects a reconnect to another mailbox in Spanish and keeps the old tokens', async () => {
+    const old = JSON.stringify({ refresh_token: 'r1', access_token: 'old1' })
+    const store = memoryStore({ 'google-client': CLIENT, 'google-tokens.a1': old })
+    const { provider, clients } = makeProvider(store, { email: 'otro@gmail.com' })
+
+    await expect(provider.reconnect('a1', 'ana@gmail.com')).rejects.toThrow(
+      'Iniciaste sesión con otro@gmail.com, pero esta cuenta es ana@gmail.com. Vuelve a intentarlo con ana@gmail.com.'
+    )
+    expect(store.data.get('google-tokens.a1')).toBe(old)
+    expect(store.list('google-tokens.')).toEqual(['google-tokens.a1'])
+    expect(clients.every((c) => vi.mocked(c.revokeToken).mock.calls.length === 0)).toBe(true)
+  })
+
+  it('refuses to reconnect an account it has no tokens for', async () => {
+    const { provider } = makeProvider(memoryStore({ 'google-client': CLIENT }))
+    await expect(provider.reconnect('missing', 'ana@gmail.com')).rejects.toThrow('Esta cuenta ya no está conectada.')
   })
 })

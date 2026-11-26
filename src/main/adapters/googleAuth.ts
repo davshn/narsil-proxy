@@ -4,9 +4,13 @@ import { randomBytes } from 'node:crypto'
 import { CodeChallengeMethod, type Credentials, type OAuth2Client } from 'google-auth-library'
 import { z } from 'zod'
 
+/** Lets Narsil manage Gmail filters, which hold the user's rules. */
+export const GMAIL_SETTINGS_SCOPE = 'https://www.googleapis.com/auth/gmail.settings.basic'
+
 export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.send',
+  GMAIL_SETTINGS_SCOPE,
   'https://www.googleapis.com/auth/calendar.readonly'
 ]
 
@@ -32,11 +36,13 @@ export function parseClientFile(json: string): ClientConfig {
 
 /**
  * Runs the OAuth loopback flow with PKCE in the user's default browser and returns the
- * tokens Google issues. `client` must have no stored credentials.
+ * tokens Google issues. `client` must have no stored credentials. `loginHint` preselects the
+ * mailbox in Google's account chooser.
  */
 export async function signInWithBrowser(
   client: OAuth2Client,
-  openExternal: (url: string) => Promise<void>
+  openExternal: (url: string) => Promise<void>,
+  loginHint?: string
 ): Promise<Credentials> {
   const { codeVerifier, codeChallenge } = await client.generateCodeVerifierAsync()
   const state = randomBytes(16).toString('hex')
@@ -53,7 +59,8 @@ export async function signInWithBrowser(
         state,
         redirect_uri: redirectUri,
         code_challenge_method: CodeChallengeMethod.S256,
-        ...(codeChallenge ? { code_challenge: codeChallenge } : {})
+        ...(codeChallenge ? { code_challenge: codeChallenge } : {}),
+        ...(loginHint ? { login_hint: loginHint } : {})
       })
       return openExternal(url)
     })

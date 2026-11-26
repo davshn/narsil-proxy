@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react'
-import type { Account, Rule, RuleAction, RuleActivity, RuleInput } from '@shared/types'
-import { describeConditions, describeRuleAction } from '@shared/rules'
+import type {
+  Account,
+  AccountRules,
+  Rule,
+  RuleActivity,
+  ServerRule,
+  ServerRuleAction,
+  ServerRuleInput
+} from '@shared/types'
+import { describeConditions, describeRuleAction, describeServerRuleAction } from '@shared/rules'
 import { FolderPicker } from './FolderPicker'
+import { ReconnectNotice } from './ReconnectNotice'
 
-const ACTION_LABEL: Record<RuleAction, string> = {
-  save: 'Mover a carpeta',
+const ACTION_LABEL: Record<ServerRuleAction, string> = {
+  move: 'Mover a carpeta',
   archive: 'Archivar',
-  delete: 'Eliminar (a la papelera)'
+  delete: 'Eliminar'
 }
 
 function done(entry: RuleActivity): string {
@@ -21,53 +30,84 @@ function failed(entry: RuleActivity): string {
   return entry.folderName ? `no pudo mover a "${entry.folderName}"` : 'no pudo mover a una carpeta'
 }
 
-const EMPTY: RuleInput = {
+const emptyDraft = (accountId: string): ServerRuleInput => ({
+  accountId,
   name: '',
-  enabled: true,
   action: 'archive',
   conditions: { from: '', subject: '', body: '' }
+})
+
+/** A server rule as the form edits it. */
+function draftOf(rule: ServerRule): ServerRuleInput {
+  return {
+    id: rule.id,
+    accountId: rule.accountId,
+    name: rule.name,
+    conditions: rule.conditions,
+    action: rule.action,
+    ...(rule.folderId ? { folderId: rule.folderId, folderName: rule.folderName ?? '' } : {})
+  }
+}
+
+/** A local rule being moved to an account with "Pasar a una cuenta…". */
+interface Conversion {
+  ruleId: string
+  accountId: string
+  folderId?: string
+  folderName?: string
 }
 
 interface RulesProps {
+  /** Local rules, kept running in Narsil until each is moved to an account. */
   rules: Rule[]
+  /** Gmail filters and Outlook inbox rules of each connected account. */
+  serverRules: AccountRules[]
   activity: RuleActivity[]
-  /** Connected accounts; a "Mover a carpeta" rule uses a folder of one of them. */
   accounts: Account[]
-  /** A draft handed over from an email card; opens the form prefilled. */
-  incomingDraft: RuleInput | null
+  /** A draft handed over from an email card ("Crear regla"); opens the form prefilled. */
+  incomingDraft: ServerRuleInput | null
   onDraftTaken(): void
 }
 
-export function Rules({ rules, activity, accounts, incomingDraft, onDraftTaken }: RulesProps): React.JSX.Element {
-  const [draft, setDraft] = useState<RuleInput | null>(null)
+export function Rules({ rules, serverRules, activity, accounts, incomingDraft, onDraftTaken }: RulesProps): React.JSX.Element {
+  const [draft, setDraft] = useState<ServerRuleInput | null>(null)
+  const [conversion, setConversion] = useState<Conversion | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void window.narsil.reloadServerRules()
+  }, [])
 
   useEffect(() => {
     if (incomingDraft) {
       setDraft(incomingDraft)
+      setConversion(null)
       setError(null)
       onDraftTaken()
     }
   }, [incomingDraft, onDraftTaken])
 
-  async function save(input: RuleInput): Promise<boolean> {
+  const accountOf = (accountId: string): Account | undefined => accounts.find((a) => a.id === accountId)
+  const accountEmail = (accountId: string): string => accountOf(accountId)?.email ?? 'cuenta quitada'
+
+  async function act(fn: () => Promise<{ ok: boolean; error?: string }>, setMessage: (m: string | null) => void): Promise<boolean> {
     setBusy(true)
-    setError(null)
-    // An account was chosen but no folder yet: leave it out so the main process explains what is missing.
-    const { folder, ...withoutFolder } = input
-    const result = await window.narsil.saveRule(folder?.id ? input : withoutFolder)
+    setMessage(null)
+    const result = await fn()
     setBusy(false)
-    if (!result.ok) setError(result.error ?? 'No se pudo guardar la regla.')
+    if (!result.ok) setMessage(result.error ?? 'Algo salió mal.')
     return result.ok
   }
 
-  const setCondition = (field: keyof RuleInput['conditions'], value: string): void =>
+  const save = (input: ServerRuleInput): Promise<boolean> => act(() => window.narsil.saveServerRule(input), setError)
+
+  const setCondition = (field: keyof ServerRuleInput['conditions'], value: string): void =>
     setDraft((d) => (d ? { ...d, conditions: { ...d.conditions, [field]: value } } : d))
 
-  const accountEmail = (accountId: string): string | undefined => accounts.find((a) => a.id === accountId)?.email
-  /** The account whose folders the form lists: the chosen folder's, or the first account. */
-  const folderAccountId = draft?.folder?.accountId ?? accounts[0]?.id
+  const draftAccount = draft ? accountOf(draft.accountId) : undefined
+  const draftNeedsReconnect = draft ? serverRules.find((a) => a.accountId === draft.accountId)?.needsReconnect === true : false
 
   return (
     <section className="rules" aria-label="Reglas">
@@ -81,12 +121,35 @@ export function Rules({ rules, activity, accounts, incomingDraft, onDraftTaken }
         >
           <h3>{draft.id ? 'Editar regla' : 'Nueva regla'}</h3>
           <p className="rule-form__hint">
-            Se aplica a los correos nuevos y a los que ya están en la lista. Deben cumplirse todas las condiciones que llenes.
+            Se guarda en la cuenta y funciona aunque tu equipo esté apagado. Al crearla, también se aplica a los correos de esa
+            cuenta que ya están en la lista. Deben cumplirse todas las condiciones que llenes.
           </p>
+          <label>
+            Cuenta
+            <select
+              value={draft.accountId}
+              // Editing replaces the rule on its own account; folders belong to one mailbox.
+              disabled={Boolean(draft.id)}
+              onChange={(e) => {
+                const { folderId: _id, folderName: _name, ...rest } = draft
+                setDraft({ ...rest, accountId: e.target.value })
+              }}
+            >
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.email}
+                </option>
+              ))}
+            </select>
+          </label>
+          {draftNeedsReconnect && draftAccount && <ReconnectNotice account={draftAccount} />}
           <label>
             Nombre
             <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Opcional" />
           </label>
+          {draftAccount?.provider === 'google' && (
+            <p className="rule-form__hint">Gmail no guarda nombres de filtros: Narsil lo mostrará con sus condiciones.</p>
+          )}
           <label>
             Remitente contiene
             <input value={draft.conditions.from} onChange={(e) => setCondition('from', e.target.value)} placeholder="tienda.com" />
@@ -101,53 +164,25 @@ export function Rules({ rules, activity, accounts, incomingDraft, onDraftTaken }
           </label>
           <label>
             Acción
-            <select value={draft.action} onChange={(e) => setDraft({ ...draft, action: e.target.value as RuleAction })}>
-              {(Object.keys(ACTION_LABEL) as RuleAction[]).map((action) => (
+            <select value={draft.action} onChange={(e) => setDraft({ ...draft, action: e.target.value as ServerRuleAction })}>
+              {(Object.keys(ACTION_LABEL) as ServerRuleAction[]).map((action) => (
                 <option key={action} value={action}>
                   {ACTION_LABEL[action]}
                 </option>
               ))}
             </select>
           </label>
-          {draft.action === 'save' &&
-            (folderAccountId === undefined ? (
-              <p className="rule-form__hint">Conecta una cuenta para elegir una carpeta.</p>
-            ) : (
-              <>
-                {accounts.length > 1 && (
-                  <label>
-                    Cuenta
-                    <select
-                      value={folderAccountId}
-                      // Folders belong to one mailbox: choose again in the new account.
-                      onChange={(e) => setDraft({ ...draft, folder: { accountId: e.target.value, id: '', name: '' } })}
-                    >
-                      {accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.email}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <div className="rule-form__folder">
-                  <span>
-                    Carpeta{draft.folder?.id ? `: ${draft.folder.name}` : ''}
-                  </span>
-                  <FolderPicker
-                    accountId={folderAccountId}
-                    selectedId={draft.folder?.id}
-                    busy={busy}
-                    onPick={(folder) =>
-                      setDraft({ ...draft, folder: { accountId: folderAccountId, id: folder.id, name: folder.name } })
-                    }
-                  />
-                </div>
-                <p className="rule-form__hint">
-                  Solo actúa sobre los correos de {accountEmail(folderAccountId) ?? 'esa cuenta'}.
-                </p>
-              </>
-            ))}
+          {draft.action === 'move' && (
+            <div className="rule-form__folder">
+              <span>Carpeta{draft.folderId ? `: ${draft.folderName ?? ''}` : ''}</span>
+              <FolderPicker
+                accountId={draft.accountId}
+                selectedId={draft.folderId}
+                busy={busy}
+                onPick={(folder) => setDraft({ ...draft, folderId: folder.id, folderName: folder.name })}
+              />
+            </div>
+          )}
           {error && (
             <p className="rules__error" role="alert">
               {error}
@@ -164,48 +199,160 @@ export function Rules({ rules, activity, accounts, incomingDraft, onDraftTaken }
         </form>
       ) : (
         <div className="rules__head">
-          <button type="button" className="btn btn--primary" onClick={() => setDraft(EMPTY)}>
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={accounts.length === 0}
+            title={accounts.length === 0 ? 'Primero agrega una cuenta en Ajustes.' : undefined}
+            onClick={() => {
+              const first = accounts[0]
+              if (!first) return
+              setError(null)
+              setConversion(null)
+              setDraft(emptyDraft(first.id))
+            }}
+          >
             Nueva regla
           </button>
         </div>
       )}
 
-      {rules.length === 0 ? (
-        !draft && (
-          <p className="empty">
-            Todavía no tienes reglas. Crea una aquí o desde un correo con “Crear regla”.
-          </p>
-        )
+      {listError && (
+        <p className="rules__error" role="alert">
+          {listError}
+        </p>
+      )}
+
+      <h3 className="rules__subhead">Reglas en tus cuentas</h3>
+      {serverRules.length === 0 ? (
+        <p className="empty">Agrega una cuenta en Ajustes para crear reglas.</p>
       ) : (
-        <ul className="rule-list">
-          {rules.map((rule) => (
-            <li key={rule.id} className={rule.enabled ? 'rule' : 'rule rule--off'}>
-              <div className="rule__text">
-                <span className="rule__name">{rule.name}</span>
-                <span className="rule__when">
-                  {describeConditions(rule.conditions)}: {describeRuleAction(rule)}
-                  {rule.action === 'save' && rule.folder && accounts.length > 1 && ` (${accountEmail(rule.folder.accountId) ?? 'cuenta quitada'})`}
-                </span>
-              </div>
-              <div className="rule__controls">
-                <label className="rule__toggle">
-                  <input
-                    type="checkbox"
-                    checked={rule.enabled}
-                    onChange={() => void save({ ...rule, enabled: !rule.enabled })}
+        serverRules.map((group) => {
+          const account = accountOf(group.accountId)
+          return (
+            <div key={group.accountId} className="rule-group">
+              <h4 className="rule-group__title" title={accountEmail(group.accountId)}>
+                {accountEmail(group.accountId)}
+              </h4>
+              {group.needsReconnect && account && <ReconnectNotice account={account} />}
+              {group.error && <p className="rules__error">{group.error}</p>}
+              {!group.loaded && !group.needsReconnect && <p className="rule-group__note">Cargando reglas…</p>}
+              {group.loaded && !group.needsReconnect && !group.error && group.rules.length === 0 && (
+                <p className="rule-group__note">Esta cuenta no tiene reglas.</p>
+              )}
+              {group.rules.length > 0 && (
+                <ul className="rule-list">
+                  {group.rules.map((rule) => (
+                    <li key={rule.id} className={rule.managedByNarsil ? 'rule' : 'rule rule--foreign'}>
+                      <div className="rule__text">
+                        <span className="rule__name">{rule.name}</span>
+                        <span className="rule__when">
+                          {rule.managedByNarsil
+                            ? `${describeConditions(rule.conditions)}: ${describeServerRuleAction(rule)}`
+                            : 'Creada fuera de Narsil. Solo puedes borrarla.'}
+                        </span>
+                      </div>
+                      <div className="rule__controls">
+                        {rule.managedByNarsil && (
+                          <button
+                            type="button"
+                            className="link-btn"
+                            disabled={busy}
+                            onClick={() => {
+                              setError(null)
+                              setConversion(null)
+                              setDraft(draftOf(rule))
+                            }}
+                          >
+                            Editar
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="link-btn link-btn--danger"
+                          disabled={busy}
+                          onClick={() => void act(() => window.narsil.deleteServerRule(rule.accountId, rule.id), setListError)}
+                        >
+                          Borrar
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )
+        })
+      )}
+
+      {rules.length > 0 && (
+        <>
+          <h3 className="rules__subhead">Reglas locales</h3>
+          <p className="rule-group__note">
+            Solo funcionan mientras Narsil está abierto en este equipo. Pásalas a una cuenta para que funcionen siempre.
+          </p>
+          <ul className="rule-list">
+            {rules.map((rule) => (
+              <li key={rule.id} className={rule.enabled ? 'rule rule--local' : 'rule rule--local rule--off'}>
+                <div className="rule__row">
+                  <div className="rule__text">
+                    <span className="rule__name">{rule.name}</span>
+                    <span className="rule__when">
+                      {describeConditions(rule.conditions)}: {describeRuleAction(rule)}
+                      {rule.action === 'save' && rule.folder && accounts.length > 1 && ` (${accountEmail(rule.folder.accountId)})`}
+                    </span>
+                  </div>
+                  <div className="rule__controls">
+                    <label className="rule__toggle">
+                      <input
+                        type="checkbox"
+                        checked={rule.enabled}
+                        disabled={busy}
+                        onChange={() => void act(() => window.narsil.saveRule({ ...rule, enabled: !rule.enabled }), setListError)}
+                      />
+                      Activa
+                    </label>
+                    <button
+                      type="button"
+                      className="link-btn"
+                      disabled={busy || accounts.length === 0}
+                      onClick={() => {
+                        setError(null)
+                        setDraft(null)
+                        setConversion({ ruleId: rule.id, accountId: rule.folder?.accountId ?? accounts[0]?.id ?? '' })
+                      }}
+                    >
+                      Pasar a una cuenta…
+                    </button>
+                    <button
+                      type="button"
+                      className="link-btn link-btn--danger"
+                      disabled={busy}
+                      onClick={() => void act(() => window.narsil.deleteRule(rule.id), setListError)}
+                    >
+                      Borrar
+                    </button>
+                  </div>
+                </div>
+                {conversion?.ruleId === rule.id && (
+                  <ConvertPanel
+                    rule={rule}
+                    conversion={conversion}
+                    accounts={accounts}
+                    busy={busy}
+                    error={error}
+                    onChange={setConversion}
+                    onCancel={() => setConversion(null)}
+                    onConvert={() => {
+                      const { ruleId, ...target } = conversion
+                      void act(() => window.narsil.convertLocalRule(ruleId, target), setError).then((ok) => ok && setConversion(null))
+                    }}
                   />
-                  Activa
-                </label>
-                <button type="button" className="link-btn" onClick={() => setDraft(rule)}>
-                  Editar
-                </button>
-                <button type="button" className="link-btn link-btn--danger" onClick={() => void window.narsil.deleteRule(rule.id)}>
-                  Borrar
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {activity.length > 0 && (
@@ -227,5 +374,78 @@ export function Rules({ rules, activity, accounts, incomingDraft, onDraftTaken }
         </>
       )}
     </section>
+  )
+}
+
+interface ConvertPanelProps {
+  rule: Rule
+  conversion: Conversion
+  accounts: Account[]
+  busy: boolean
+  error: string | null
+  onChange(next: Conversion): void
+  onCancel(): void
+  onConvert(): void
+}
+
+/**
+ * "Pasar a una cuenta…": a save rule with a folder goes to that folder's account; any other rule
+ * picks an account, and an old save rule without a folder also picks the folder.
+ */
+function ConvertPanel({ rule, conversion, accounts, busy, error, onChange, onCancel, onConvert }: ConvertPanelProps): React.JSX.Element {
+  const fixed = rule.action === 'save' && rule.folder ? rule.folder : null
+  const needsFolder = rule.action === 'save' && !rule.folder
+  const email = (id: string): string => accounts.find((a) => a.id === id)?.email ?? 'cuenta quitada'
+
+  return (
+    <div className="rule-convert" role="group" aria-label={`Pasar ${rule.name} a una cuenta`}>
+      {fixed ? (
+        <p className="rule-form__hint">
+          Se creará en {email(fixed.accountId)} y moverá los correos a “{fixed.name}”. Después se borra la regla local.
+        </p>
+      ) : (
+        <>
+          <label className="rule-convert__field">
+            Cuenta
+            <select
+              value={conversion.accountId}
+              disabled={busy}
+              onChange={(e) => onChange({ ruleId: conversion.ruleId, accountId: e.target.value })}
+            >
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.email}
+                </option>
+              ))}
+            </select>
+          </label>
+          {needsFolder && (
+            <div className="rule-form__folder">
+              <span>Carpeta{conversion.folderId ? `: ${conversion.folderName ?? ''}` : ''}</span>
+              <FolderPicker
+                accountId={conversion.accountId}
+                selectedId={conversion.folderId}
+                busy={busy}
+                onPick={(folder) => onChange({ ...conversion, folderId: folder.id, folderName: folder.name })}
+              />
+            </div>
+          )}
+          <p className="rule-form__hint">Después de crearla en la cuenta, se borra la regla local.</p>
+        </>
+      )}
+      {error && (
+        <p className="rules__error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="rule-form__actions">
+        <button type="button" className="btn btn--ghost" disabled={busy} onClick={onCancel}>
+          Cancelar
+        </button>
+        <button type="button" className="btn btn--primary" disabled={busy || (needsFolder && !conversion.folderId)} onClick={onConvert}>
+          {busy ? 'Pasando…' : 'Pasar'}
+        </button>
+      </div>
+    </div>
   )
 }

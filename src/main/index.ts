@@ -219,6 +219,20 @@ const RuleInputSchema = z.object({
   conditions: z.object({ from: Condition, subject: Condition, body: Condition }),
   folder: z.object({ accountId: AccountId, id: FolderId, name: z.string().max(500) }).optional()
 })
+/** Gmail filter ids are short; Outlook rule ids are long base64 strings. */
+const ServerRuleId = z.string().min(1).max(1024)
+const ServerRuleInputSchema = z.object({
+  id: ServerRuleId.optional(),
+  accountId: AccountId,
+  name: z.string().max(120),
+  conditions: z.object({ from: Condition, subject: Condition, body: Condition }),
+  action: z.enum(['archive', 'delete', 'move']),
+  folderId: FolderId.optional(),
+  folderName: z.string().max(500).optional()
+})
+const ConvertTargetSchema = z
+  .object({ accountId: AccountId, folderId: FolderId.optional(), folderName: z.string().max(500).optional() })
+  .optional()
 
 function registerIpc(svc: NarsilService): void {
   ipcMain.handle(IPC.getStatus, () => svc.status())
@@ -268,6 +282,16 @@ function registerIpc(svc: NarsilService): void {
   ipcMain.handle(IPC.getRuleActivity, () => svc.ruleActivity())
   ipcMain.handle(IPC.saveRule, (_e, input: unknown) => run(() => svc.saveRule(RuleInputSchema.parse(input))))
   ipcMain.handle(IPC.deleteRule, (_e, id: unknown) => run(() => svc.deleteRule(z.string().min(1).max(64).parse(id))))
+  ipcMain.handle(IPC.getServerRules, () => svc.serverRules())
+  ipcMain.handle(IPC.reloadServerRules, () => run(() => svc.loadServerRules()))
+  ipcMain.handle(IPC.saveServerRule, (_e, input: unknown) => run(() => svc.saveServerRule(ServerRuleInputSchema.parse(input))))
+  ipcMain.handle(IPC.deleteServerRule, (_e, accountId: unknown, ruleId: unknown) =>
+    run(() => svc.deleteServerRule(AccountId.parse(accountId), ServerRuleId.parse(ruleId)))
+  )
+  ipcMain.handle(IPC.convertLocalRule, (_e, ruleId: unknown, target: unknown) =>
+    run(() => svc.convertLocalRule(z.string().min(1).max(64).parse(ruleId), ConvertTargetSchema.parse(target)))
+  )
+  ipcMain.handle(IPC.reconnectAccount, (_e, accountId: unknown) => run(() => svc.reconnectAccount(AccountId.parse(accountId))))
   ipcMain.handle(IPC.setExpanded, (_e, expanded: unknown) => {
     placeWindow(expanded === true ? EXPANDED : COLLAPSED)
   })
@@ -292,6 +316,7 @@ if (!app.requestSingleInstanceLock()) {
       statusChanged: (status) => send(IPC.statusChanged, status),
       rulesChanged: (rules) => send(IPC.rulesChanged, rules),
       activityChanged: (activity) => send(IPC.ruleActivityChanged, activity),
+      serverRulesChanged: (rules) => send(IPC.serverRulesChanged, rules),
       newEmails: (items) => notifyNewEmails(items, service?.status().accounts ?? []),
       reminder: (alert) => {
         send(IPC.reminder, alert)

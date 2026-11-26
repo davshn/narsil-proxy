@@ -69,6 +69,7 @@ function makeService(store: SecretStore, google: unknown, microsoft: unknown) {
     statusChanged: vi.fn(),
     rulesChanged: vi.fn(),
     activityChanged: vi.fn(),
+    serverRulesChanged: vi.fn(),
     newEmails: vi.fn()
   }
   const service = new NarsilService({

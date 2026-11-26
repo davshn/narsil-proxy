@@ -1,24 +1,29 @@
 import { randomUUID } from 'node:crypto'
 import type {
   Account,
+  AccountRules,
   AccountSettings,
   AppStatus,
+  ConvertTarget,
   EmailAction,
   InboxItem,
   MailFolder,
   Meeting,
+  NewServerRule,
   ProviderKind,
   ReminderAlert,
   Rule,
   RuleActivity,
-  RuleInput
+  RuleInput,
+  ServerRule,
+  ServerRuleInput
 } from '@shared/types'
-import { findMatchingRule, normalizeFolderName, normalizeRule } from '@shared/rules'
+import { findMatchingRule, normalizeFolderName, normalizeRule, normalizeServerRule, serverActionForLocal } from '@shared/rules'
 import type { ParsedEmail } from '../domain/email'
 import type { RulesRepository } from '../adapters/rulesStore'
 import { dueReminders } from '../domain/reminders'
 import { ClaudeTriage, describeClaudeError } from '../adapters/claude'
-import type { AccountConnection, MailProvider, ProviderAuth } from './ports'
+import { ReconnectRequiredError, type AccountConnection, type MailProvider, type ProviderAuth } from './ports'
 import type { AccountRegistry, SecretStore } from './accounts'
 
 const INBOX_POLL_MS = 60_000
@@ -35,6 +40,7 @@ export interface NarsilEvents {
   statusChanged(status: AppStatus): void
   rulesChanged(rules: Rule[]): void
   activityChanged(activity: RuleActivity[]): void
+  serverRulesChanged(rules: AccountRules[]): void
   /**
    * Emails that arrived since the previous poll of one account, after their triage attempt.
    * Never empty. Excludes emails a rule handled, those received before the account's first load
@@ -83,6 +89,14 @@ interface Connected {
   account: Account
   connection: AccountConnection
 }
+
+/** The last listed server rules of one account. */
+interface RuleListState {
+  rules: ServerRule[]
+  error?: string
+}
+
+const UNKNOWN_ACCOUNT = 'Esta cuenta ya no está conectada.'
 
 const itemKey = (accountId: string, messageId: string): string => `${accountId}:${messageId}`
 
@@ -134,6 +148,12 @@ export class NarsilService {
   private readonly announced = new Map<string, Set<string>>()
   private ruleList: Rule[]
   private activity: RuleActivity[] = []
+  /** Server rules per account id, set once that account was listed. */
+  private readonly serverRuleLists = new Map<string, RuleListState>()
+  /** Accounts that lack the rule permission; reported in status(), never as an error. */
+  private readonly reconnectNeeded = new Set<string>()
+  /** One reconnect sign-in per account; a second click joins it. */
+  private readonly reconnecting = new Map<string, Promise<void>>()
 
   constructor(deps: NarsilDeps) {
     this.store = deps.store
@@ -153,7 +173,7 @@ export class NarsilService {
       setInterval(() => this.checkReminders(), REMINDER_TICK_MS)
     )
     void this.init()
-      .then(() => this.refresh())
+      .then(() => Promise.all([this.refresh(), this.loadServerRules()]))
       .catch((error: unknown) => this.setError('startup', message(error)))
   }
 
@@ -194,7 +214,7 @@ export class NarsilService {
       damaged = message(error)
     }
     const status: AppStatus = {
-      accounts,
+      accounts: accounts.map((a) => (this.reconnectNeeded.has(a.id) ? { ...a, needsReconnect: true } : a)),
       hasGoogleClient: this.providers.google.isConfigured(),
       hasMicrosoftClient: this.providers.microsoft.isConfigured(),
       hasAnthropicKey: this.anthropicKey() !== null
@@ -235,6 +255,192 @@ export class NarsilService {
 
   deleteRule(id: string): void {
     this.setRules(this.ruleList.filter((r) => r.id !== id))
+  }
+
+  /** The last listed server rules of every connected account, in account order. */
+  serverRules(): AccountRules[] {
+    return [...this.connections.keys()].map((accountId) => {
+      const state = this.serverRuleLists.get(accountId)
+      return {
+        accountId,
+        rules: state?.rules ?? [],
+        loaded: state !== undefined,
+        needsReconnect: this.reconnectNeeded.has(accountId),
+        ...(state?.error ? { error: state.error } : {})
+      }
+    })
+  }
+
+  /**
+   * Lists the server rules of every connected account (or only `accountId`). Never throws: a
+   * missing permission flags the account, any other failure stays on that account's list.
+   */
+  async loadServerRules(accountId?: string): Promise<void> {
+    const targets = [...this.connections.values()].filter((c) => accountId === undefined || c.account.id === accountId)
+    await Promise.all(targets.map((c) => this.loadAccountRules(c)))
+    this.emitServerRules()
+  }
+
+  private async loadAccountRules(connected: Connected): Promise<void> {
+    const id = connected.account.id
+    try {
+      const rules = await connected.connection.rules.list()
+      if (!this.isLive(connected)) return
+      this.serverRuleLists.set(id, { rules })
+      this.setReconnectNeeded(id, false)
+    } catch (error) {
+      if (!this.isLive(connected)) return
+      if (error instanceof ReconnectRequiredError) {
+        this.serverRuleLists.set(id, { rules: [] })
+        this.setReconnectNeeded(id, true)
+      } else {
+        this.serverRuleLists.set(id, { rules: this.serverRuleLists.get(id)?.rules ?? [], error: message(error) })
+      }
+    }
+  }
+
+  /**
+   * Creates a rule on its account, or replaces rule `input.id` there (remove, then create: Gmail
+   * filters cannot be updated). Then applies it once to that account's listed emails.
+   */
+  async saveServerRule(input: ServerRuleInput): Promise<void> {
+    const connected = this.requireConnected(input.accountId)
+    const rule = normalizeServerRule(input)
+    const rules = connected.connection.rules
+    const replacing = input.id
+    if (replacing) {
+      await this.ruleCall(connected, () => rules.remove(replacing))
+      this.patchServerRules(input.accountId, (list) => list.filter((r) => r.id !== replacing))
+    }
+    let created: ServerRule
+    try {
+      created = await this.ruleCall(connected, () => rules.create(rule))
+    } catch (error) {
+      if (replacing && !(error instanceof ReconnectRequiredError)) {
+        throw new Error(`Se quitó la regla anterior, pero no se pudo crear la nueva: ${message(error)}`)
+      }
+      throw error
+    }
+    this.patchServerRules(input.accountId, (list) => [...list, created])
+    await this.applyServerRuleOnce(connected, rule)
+  }
+
+  async deleteServerRule(accountId: string, ruleId: string): Promise<void> {
+    const connected = this.requireConnected(accountId)
+    await this.ruleCall(connected, () => connected.connection.rules.remove(ruleId))
+    this.patchServerRules(accountId, (list) => list.filter((r) => r.id !== ruleId))
+  }
+
+  /**
+   * Replaces a local rule with a server rule, then deletes the local one; if the server rule
+   * cannot be created the local rule stays. A save rule with a folder goes to that folder's
+   * account; any other rule needs `target.accountId`, and an old save rule also a folder.
+   */
+  async convertLocalRule(ruleId: string, target?: ConvertTarget): Promise<void> {
+    const rule = this.ruleList.find((r) => r.id === ruleId)
+    if (!rule) throw new Error('Esta regla ya no existe.')
+    const action = serverActionForLocal(rule.action)
+    let input: ServerRuleInput
+    if (rule.action === 'save' && rule.folder) {
+      const { accountId, id, name } = rule.folder
+      input = { accountId, name: rule.name, conditions: rule.conditions, action, folderId: id, folderName: name }
+    } else {
+      if (!target?.accountId) throw new Error('Elige la cuenta donde se guarda esta regla.')
+      input = { accountId: target.accountId, name: rule.name, conditions: rule.conditions, action }
+      if (action === 'move' && target.folderId) {
+        input.folderId = target.folderId
+        input.folderName = target.folderName ?? ''
+      }
+    }
+    await this.saveServerRule(input)
+    this.deleteRule(ruleId)
+  }
+
+  /**
+   * Signs in again to a stored account with its own email (to grant the rule permission), then
+   * rebuilds its connection with the new credentials, keeping its listed emails, and lists its
+   * rules again. A call made while one runs for that account joins it.
+   */
+  reconnectAccount(accountId: string): Promise<void> {
+    let pending = this.reconnecting.get(accountId)
+    if (!pending) {
+      pending = this.runReconnect(accountId).finally(() => this.reconnecting.delete(accountId))
+      this.reconnecting.set(accountId, pending)
+    }
+    return pending
+  }
+
+  private async runReconnect(accountId: string): Promise<void> {
+    const account = this.accounts.list().find((a) => a.id === accountId)
+    if (!account) throw new Error(UNKNOWN_ACCOUNT)
+    await this.initRun?.catch(() => undefined)
+    const provider = this.providers[account.provider]
+    await provider.reconnect(accountId, account.email)
+    const connection = provider.connect(accountId)
+    if (connection) {
+      this.connections.set(accountId, { account: this.connections.get(accountId)?.account ?? account, connection })
+      this.errors.delete(`${accountId}:connect`)
+    }
+    this.setReconnectNeeded(accountId, false)
+    this.emitStatus()
+    await this.loadServerRules(accountId)
+  }
+
+  /** Runs a rule call; a missing permission flags the account before the error goes on. */
+  private async ruleCall<T>(connected: Connected, call: () => Promise<T>): Promise<T> {
+    try {
+      return await call()
+    } catch (error) {
+      if (error instanceof ReconnectRequiredError && this.isLive(connected)) {
+        this.setReconnectNeeded(connected.account.id, true)
+        this.emitServerRules()
+      }
+      throw error
+    }
+  }
+
+  private patchServerRules(accountId: string, change: (rules: ServerRule[]) => ServerRule[]): void {
+    const state = this.serverRuleLists.get(accountId)
+    this.serverRuleLists.set(accountId, { rules: change(state?.rules ?? []) })
+    this.emitServerRules()
+  }
+
+  /**
+   * The account applies a new rule only to mail that arrives later, so Narsil runs it once on
+   * the emails of that account it lists now, logging each in the recent activity.
+   */
+  private async applyServerRuleOnce(connected: Connected, rule: NewServerRule): Promise<void> {
+    const accountId = connected.account.id
+    const local: Rule = {
+      id: 'server-rule',
+      name: rule.name,
+      enabled: true,
+      conditions: rule.conditions,
+      action: rule.action === 'move' ? 'save' : rule.action,
+      ...(rule.action === 'move' && rule.folderId
+        ? { folder: { accountId, id: rule.folderId, name: rule.folderName ?? '' } }
+        : {})
+    }
+    let changed = false
+    for (const tracked of [...this.inbox.values()]) {
+      if (tracked.accountId !== accountId || !this.isLive(connected)) continue
+      if (await this.applyRules(connected.connection.mail, tracked.parsed, [local])) {
+        this.inbox.delete(tracked.key)
+        changed = true
+      }
+    }
+    if (changed) this.emitInbox()
+  }
+
+  private setReconnectNeeded(accountId: string, needed: boolean): void {
+    if (this.reconnectNeeded.has(accountId) === needed) return
+    if (needed) this.reconnectNeeded.add(accountId)
+    else this.reconnectNeeded.delete(accountId)
+    this.emitStatus()
+  }
+
+  private emitServerRules(): void {
+    this.events.serverRulesChanged(this.serverRules())
   }
 
   async refresh(): Promise<void> {
@@ -297,6 +503,7 @@ export class NarsilService {
     this.disconnect(accountId)
     this.emitInbox()
     this.events.meetingsChanged(this.meetings)
+    this.emitServerRules()
     this.emitStatus()
   }
 
@@ -353,7 +560,7 @@ export class NarsilService {
 
   private requireConnected(accountId: string): Connected {
     const connected = this.connections.get(accountId)
-    if (!connected) throw new Error('Esta cuenta ya no está conectada.')
+    if (!connected) throw new Error(UNKNOWN_ACCOUNT)
     return connected
   }
 
@@ -431,6 +638,8 @@ export class NarsilService {
     this.changeTokens.delete(accountId)
     this.firstLoadAt.delete(accountId)
     this.announced.delete(accountId)
+    this.serverRuleLists.delete(accountId)
+    this.reconnectNeeded.delete(accountId)
     this.mergeMeetings()
     for (const source of [...this.errors.keys()]) if (source.startsWith(`${accountId}:`)) this.errors.delete(source)
   }
@@ -454,8 +663,8 @@ export class NarsilService {
   }
 
   /** Runs the first matching rule on an email. Returns true when the email was handled. */
-  private async applyRules(mail: MailProvider, parsed: ParsedEmail): Promise<boolean> {
-    const rule = findMatchingRule(this.ruleList, {
+  private async applyRules(mail: MailProvider, parsed: ParsedEmail, rules: readonly Rule[] = this.ruleList): Promise<boolean> {
+    const rule = findMatchingRule(rules, {
       from: parsed.summary.from,
       subject: parsed.summary.subject,
       body: parsed.bodyText || parsed.summary.snippet,

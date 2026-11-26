@@ -2,9 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NarsilService, type NarsilEvents } from '../src/main/app/narsilService'
 import { AccountRegistry, type SecretStore } from '../src/main/app/accounts'
 import { parseMessage, type ParsedEmail } from '../src/main/domain/email'
-import type { AccountConnection, AddedAccount, ProviderAuth } from '../src/main/app/ports'
+import { ReconnectRequiredError, type AccountConnection, type AddedAccount, type ProviderAuth } from '../src/main/app/ports'
 import type { SecretName } from '../src/main/adapters/secureStore'
-import type { Account, AccountSettings, MailFolder, Meeting, ProviderKind, Rule, Triage } from '@shared/types'
+import type {
+  Account,
+  AccountSettings,
+  MailFolder,
+  Meeting,
+  NewServerRule,
+  ProviderKind,
+  Rule,
+  ServerRule,
+  Triage
+} from '@shared/types'
 
 const fake = vi.hoisted(() => ({ triage: vi.fn<() => Promise<Triage>>() }))
 
@@ -67,7 +77,16 @@ function makeMailbox() {
     createFolder: vi.fn<(name: string) => Promise<MailFolder>>(async (name) => ({ id: `new-${name}`, name })),
     /** The settings each listUnread() call received. */
     settingsSeen: [] as AccountSettings[],
-    reply: vi.fn<(email: ParsedEmail, body: string) => Promise<void>>(async () => undefined)
+    reply: vi.fn<(email: ParsedEmail, body: string) => Promise<void>>(async () => undefined),
+    /** The account's Gmail filters or Outlook rules. */
+    serverRules: [] as ServerRule[],
+    /** What rules.list() and rules.create() throw, e.g. a ReconnectRequiredError. */
+    rulesError: null as Error | null,
+    createError: null as Error | null,
+    /** Every rules.create / rules.remove call, in order, as `create:<name>` or `remove:<id>`. */
+    ruleCalls: [] as string[],
+    createRule: vi.fn<(rule: NewServerRule) => Promise<ServerRule>>(),
+    removeRule: vi.fn<(id: string) => Promise<void>>()
   }
   return box
 }
@@ -81,6 +100,7 @@ class FakeProvider implements ProviderAuth {
   readonly removeAccount = vi.fn(async (_id: string) => undefined)
   readonly saveClientConfig = vi.fn<(json: string) => void>()
   readonly saveClientId = vi.fn<(id: string) => void>()
+  readonly reconnect = vi.fn(async (_id: string, _email: string) => undefined)
 
   constructor(readonly kind: ProviderKind) {}
 
@@ -148,7 +168,26 @@ class FakeProvider implements ProviderAuth {
         createFolder: (name) => box.createFolder(name),
         reply: (email, body) => box.reply(email, body)
       },
-      calendar: { upcoming: async () => box.meetings }
+      calendar: { upcoming: async () => box.meetings },
+      rules: {
+        list: async () => {
+          if (box.rulesError) throw box.rulesError
+          return box.serverRules
+        },
+        create: async (rule) => {
+          box.ruleCalls.push(`create:${rule.name}`)
+          await box.createRule(rule)
+          if (box.createError) throw box.createError
+          const created: ServerRule = { ...rule, id: `s${box.serverRules.length + 1}`, accountId, managedByNarsil: true }
+          box.serverRules = [...box.serverRules, created]
+          return created
+        },
+        remove: async (id) => {
+          box.ruleCalls.push(`remove:${id}`)
+          await box.removeRule(id)
+          box.serverRules = box.serverRules.filter((r) => r.id !== id)
+        }
+      }
     }
   }
 }
@@ -209,6 +248,7 @@ async function makeService(options: ServiceOptions = {}): Promise<Setup> {
     statusChanged: vi.fn(),
     rulesChanged: vi.fn(),
     activityChanged: vi.fn(),
+    serverRulesChanged: vi.fn(),
     newEmails: vi.fn()
   }
   const service = new NarsilService({
@@ -1104,5 +1144,210 @@ describe('NarsilService save rules', () => {
     await service.saveRule({ ...legacy, enabled: false })
 
     expect(service.rules()).toEqual([{ ...legacy, enabled: false }])
+  })
+})
+
+describe('NarsilService server rules', () => {
+  const shop = { from: 'shop.example', subject: '', body: '' }
+
+  it('lists the rules of every account, and creates a rule only on the account it names', async () => {
+    const { service, google, events } = await makeService({ accounts: [ANA, BETO] })
+    google.box('g1').serverRules = [
+      { id: 'f1', accountId: 'g1', name: 'x', conditions: shop, action: 'archive', managedByNarsil: true }
+    ]
+    await service.loadServerRules()
+    expect(service.serverRules().map((a) => [a.accountId, a.rules.map((r) => r.id), a.loaded])).toEqual([
+      ['g1', ['f1'], true],
+      ['g2', [], true]
+    ])
+
+    await service.saveServerRule({ accountId: 'g2', name: ' Tienda ', conditions: { ...shop, from: ' shop.example ' }, action: 'delete' })
+
+    expect(google.box('g2').createRule).toHaveBeenCalledWith({ name: 'Tienda', conditions: shop, action: 'delete' })
+    expect(google.box('g1').createRule).not.toHaveBeenCalled()
+    expect(service.serverRules().find((a) => a.accountId === 'g2')?.rules.map((r) => r.name)).toEqual(['Tienda'])
+    expect(events.serverRulesChanged).toHaveBeenCalled()
+  })
+
+  it('edits a rule by removing it, then creating the new one', async () => {
+    const { service, google } = await makeService()
+    const box = google.box('g1')
+    box.serverRules = [{ id: 'f1', accountId: 'g1', name: 'Vieja', conditions: shop, action: 'archive', managedByNarsil: true }]
+
+    await service.saveServerRule({ id: 'f1', accountId: 'g1', name: 'Nueva', conditions: shop, action: 'delete' })
+
+    expect(box.ruleCalls).toEqual(['remove:f1', 'create:Nueva'])
+    expect(box.serverRules.map((r) => r.name)).toEqual(['Nueva'])
+  })
+
+  it('rejects a rule without conditions and a move without a folder, creating nothing', async () => {
+    const { service, google } = await makeService()
+    const empty = { from: ' ', subject: '', body: '' }
+
+    await expect(service.saveServerRule({ accountId: 'g1', name: 'Todo', conditions: empty, action: 'archive' })).rejects.toThrow(
+      'Agrega al menos una condición.'
+    )
+    await expect(service.saveServerRule({ accountId: 'g1', name: 'x', conditions: shop, action: 'move' })).rejects.toThrow(
+      'Elige la carpeta donde se guardan estos correos.'
+    )
+    await expect(service.saveServerRule({ id: 'f1', accountId: 'g1', name: 'x', conditions: empty, action: 'delete' })).rejects.toThrow(
+      'Agrega al menos una condición.'
+    )
+    expect(google.box('g1').ruleCalls).toEqual([])
+  })
+
+  it('applies a new rule once to the matching emails listed for its account and logs it', async () => {
+    const { service, google } = await makeService({ accounts: [ANA, BETO] })
+    google.box('g1').ids = ['promo', 'ana']
+    google.box('g1').senders.promo = 'Ofertas <promo@shop.example>'
+    google.box('g2').ids = ['promo2']
+    google.box('g2').senders.promo2 = 'promo@shop.example'
+    fake.triage.mockResolvedValue(TRIAGE)
+    await service.refresh()
+
+    await service.saveServerRule({ accountId: 'g1', name: 'Tienda', conditions: shop, action: 'move', folderId: 'Label_1', folderName: 'Compras' })
+
+    expect(google.box('g1').moveToFolder).toHaveBeenCalledWith('promo', 'Label_1')
+    expect(google.box('g2').moveToFolder).not.toHaveBeenCalled()
+    expect(service.inboxItems().map((i) => i.key).sort()).toEqual(['g1:ana', 'g2:promo2'])
+    expect(service.ruleActivity()).toMatchObject([{ ruleName: 'Tienda', action: 'save', folderName: 'Compras', subject: 'Asunto promo' }])
+  })
+
+  it('deletes a rule on its account', async () => {
+    const { service, google } = await makeService()
+    google.box('g1').serverRules = [{ id: 'f1', accountId: 'g1', name: 'x', conditions: shop, action: 'archive', managedByNarsil: false }]
+
+    await service.deleteServerRule('g1', 'f1')
+
+    expect(google.box('g1').ruleCalls).toEqual(['remove:f1'])
+    expect(service.serverRules()[0]?.rules).toEqual([])
+  })
+
+  it('converts a local save rule with a folder into a move rule on that folder account, then deletes the local one', async () => {
+    const local: Rule = {
+      id: 'r1',
+      name: 'Banco',
+      enabled: true,
+      action: 'save',
+      conditions: { from: 'banco.example', subject: '', body: '' },
+      folder: { accountId: 'g2', id: 'Label_7', name: 'Bancos' }
+    }
+    const repo = makeRepo([local])
+    const { service, google } = await makeService({ accounts: [ANA, BETO], repo })
+
+    await service.convertLocalRule('r1')
+
+    expect(google.box('g2').createRule).toHaveBeenCalledWith({
+      name: 'Banco',
+      conditions: local.conditions,
+      action: 'move',
+      folderId: 'Label_7',
+      folderName: 'Bancos'
+    })
+    expect(google.box('g1').createRule).not.toHaveBeenCalled()
+    expect(service.rules()).toEqual([])
+    expect(repo.save).toHaveBeenLastCalledWith([])
+  })
+
+  it('asks for an account, and a folder for an old save rule, when converting other local rules', async () => {
+    const archive: Rule = { id: 'r1', name: 'Tienda', enabled: true, action: 'archive', conditions: shop }
+    const legacy: Rule = { id: 'r2', name: 'Viejo', enabled: true, action: 'save', conditions: shop }
+    const { service, google } = await makeService({ repo: makeRepo([archive, legacy]) })
+
+    await expect(service.convertLocalRule('r1')).rejects.toThrow('Elige la cuenta donde se guarda esta regla.')
+    await expect(service.convertLocalRule('r2', { accountId: 'g1' })).rejects.toThrow('Elige la carpeta donde se guardan estos correos.')
+    expect(service.rules().map((r) => r.id)).toEqual(['r1', 'r2'])
+
+    await service.convertLocalRule('r1', { accountId: 'g1' })
+    await service.convertLocalRule('r2', { accountId: 'g1', folderId: 'Label_1', folderName: 'Facturas' })
+
+    expect(google.box('g1').createRule.mock.calls.map(([rule]) => [rule.action, rule.folderId])).toEqual([
+      ['archive', undefined],
+      ['move', 'Label_1']
+    ])
+    expect(service.rules()).toEqual([])
+  })
+
+  it('keeps the local rule when the server rule cannot be created', async () => {
+    const local: Rule = { id: 'r1', name: 'Tienda', enabled: true, action: 'delete', conditions: shop }
+    const repo = makeRepo([local])
+    const { service, google } = await makeService({ repo })
+    google.box('g1').createError = new Error('quota')
+
+    await expect(service.convertLocalRule('r1', { accountId: 'g1' })).rejects.toThrow('quota')
+
+    expect(service.rules()).toEqual([local])
+    expect(repo.save).not.toHaveBeenCalled()
+  })
+
+  it('marks an account without the rule permission as needing a reconnect, without an error or a mail failure', async () => {
+    const { service, google, events } = await makeService({ accounts: [ANA, BETO] })
+    google.box('g1').rulesError = new ReconnectRequiredError()
+    google.box('g1').ids = ['m1']
+    fake.triage.mockResolvedValue(TRIAGE)
+
+    await service.loadServerRules()
+    await service.refresh()
+
+    expect(service.serverRules()).toMatchObject([
+      { accountId: 'g1', needsReconnect: true, rules: [] },
+      { accountId: 'g2', needsReconnect: false }
+    ])
+    expect(service.serverRules()[0]?.error).toBeUndefined()
+    expect(service.status().accounts.map((a) => [a.id, a.needsReconnect ?? false])).toEqual([
+      ['g1', true],
+      ['g2', false]
+    ])
+    expect(service.status().lastError).toBeUndefined()
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['g1:m1'])
+    expect(events.statusChanged).toHaveBeenCalled()
+  })
+
+  it('keeps another rule list failure on that account, out of the status error', async () => {
+    const { service, google } = await makeService()
+    google.box('g1').rulesError = new Error('Backend Error')
+
+    await service.loadServerRules()
+
+    expect(service.serverRules()[0]).toMatchObject({ needsReconnect: false, error: 'Backend Error' })
+    expect(service.status().lastError).toBeUndefined()
+  })
+
+  it('reconnects an account with its own email, then clears the flag and lists its rules again', async () => {
+    const { service, google } = await makeService()
+    const box = google.box('g1')
+    box.rulesError = new ReconnectRequiredError()
+    await service.loadServerRules()
+    google.reconnect.mockImplementation(async () => {
+      box.rulesError = null
+      box.serverRules = [{ id: 'f1', accountId: 'g1', name: 'x', conditions: shop, action: 'archive', managedByNarsil: true }]
+    })
+
+    await service.reconnectAccount('g1')
+
+    expect(google.reconnect).toHaveBeenCalledWith('g1', 'ana@gmail.com')
+    expect(service.serverRules()[0]).toMatchObject({ needsReconnect: false, rules: [{ id: 'f1' }] })
+    expect(service.status().accounts[0]?.needsReconnect).toBeUndefined()
+  })
+
+  it('keeps the account flagged when the reconnect fails', async () => {
+    const { service, google } = await makeService()
+    google.box('g1').rulesError = new ReconnectRequiredError()
+    await service.loadServerRules()
+    google.reconnect.mockRejectedValue(new Error('Iniciaste sesión con otro@gmail.com'))
+
+    await expect(service.reconnectAccount('g1')).rejects.toThrow('Iniciaste sesión con otro@gmail.com')
+
+    expect(service.serverRules()[0]?.needsReconnect).toBe(true)
+  })
+
+  it('flags the account when creating a rule needs a reconnect, and passes the Spanish message on', async () => {
+    const { service, google } = await makeService()
+    google.box('g1').createError = new ReconnectRequiredError()
+
+    await expect(service.saveServerRule({ accountId: 'g1', name: 'x', conditions: shop, action: 'archive' })).rejects.toThrow(
+      'Reconecta esta cuenta para administrar sus reglas.'
+    )
+    expect(service.serverRules()[0]?.needsReconnect).toBe(true)
   })
 })

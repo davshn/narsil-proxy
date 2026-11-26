@@ -6,6 +6,7 @@ import { LEGACY_GOOGLE_ACCOUNT_ID, type SecretStore } from '../../app/accounts'
 import { parseClientFile, signInWithBrowser, type ClientConfig } from '../googleAuth'
 import { GmailService, fetchProfileEmail } from '../gmail'
 import { CalendarService } from '../calendar'
+import { GmailRules } from './gmailRules'
 
 /** Seams for tests; production uses the defaults. */
 export interface GoogleProviderOptions {
@@ -35,6 +36,8 @@ export class GoogleProvider implements ProviderAuth {
    */
   private readonly unconfirmed = new Set<string>()
   private pending: Promise<AddedAccount> | null = null
+  /** The reconnect sign-in in flight per account; a second click joins it. */
+  private readonly reconnecting = new Map<string, Promise<void>>()
   private readonly openExternal: (url: string) => Promise<void>
   private readonly createClient: (config: ClientConfig) => OAuth2Client
   private readonly fetchProfileEmail: (client: OAuth2Client) => Promise<string>
@@ -68,6 +71,35 @@ export class GoogleProvider implements ProviderAuth {
       this.pending = null
     })
     return this.pending
+  }
+
+  reconnect(accountId: string, email: string): Promise<void> {
+    let pending = this.reconnecting.get(accountId)
+    if (!pending) {
+      pending = this.runReconnect(accountId, email).finally(() => this.reconnecting.delete(accountId))
+      this.reconnecting.set(accountId, pending)
+    }
+    return pending
+  }
+
+  /**
+   * Signs in again and stores the new tokens under the same id. The old tokens are never revoked:
+   * Google revokes the whole grant, which would sign the new tokens out too.
+   */
+  private async runReconnect(accountId: string, email: string): Promise<void> {
+    if (!ACCOUNT_ID.test(accountId) || !this.store.has(tokenSecret(accountId))) throw new Error('Esta cuenta ya no está conectada.')
+    const config = this.clientConfig()
+    if (!config) throw new Error('Primero carga tu archivo de cliente OAuth de Google.')
+    const client = this.createClient(config)
+    const tokens = await signInWithBrowser(client, this.openExternal, email)
+    client.setCredentials(tokens)
+    const signedIn = (await this.fetchProfileEmail(client)).trim()
+    if (signedIn.toLowerCase() !== email.trim().toLowerCase()) {
+      throw new Error(`Iniciaste sesión con ${signedIn}, pero esta cuenta es ${email}. Vuelve a intentarlo con ${email}.`)
+    }
+    // Drop the cached client first so a refresh of the old tokens cannot overwrite the new ones.
+    this.dropClient(accountId)
+    this.store.set(tokenSecret(accountId), JSON.stringify(tokens))
   }
 
   private async runAddAccount(): Promise<AddedAccount> {
@@ -111,7 +143,11 @@ export class GoogleProvider implements ProviderAuth {
     this.unconfirmed.delete(accountId)
     const client = this.authorizedClient(accountId)
     if (!client) return null
-    return { mail: new GmailService(client, accountId), calendar: new CalendarService(client, accountId) }
+    return {
+      mail: new GmailService(client, accountId),
+      calendar: new CalendarService(client, accountId),
+      rules: new GmailRules(client, accountId)
+    }
   }
 
   /** The mailbox address for raw token JSON. Used to migrate the legacy single account. */

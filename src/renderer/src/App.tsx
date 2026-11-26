@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AppStatus, InboxItem, Meeting, ReminderAlert, Rule, RuleActivity, RuleInput } from '@shared/types'
-import { ruleDraftFromEmail } from '@shared/rules'
+import type { AccountRules, AppStatus, InboxItem, Meeting, ReminderAlert, Rule, RuleActivity, ServerRuleInput } from '@shared/types'
+import { serverRuleDraftFromEmail } from '@shared/rules'
 import { NarsilPet, Water, petPose } from './components/NarsilPet'
 import { EmailCard } from './components/EmailCard'
 import { Meetings } from './components/Meetings'
@@ -31,7 +31,8 @@ export function App(): React.JSX.Element {
   const [refreshing, setRefreshing] = useState(false)
   const [rules, setRules] = useState<Rule[]>([])
   const [activity, setActivity] = useState<RuleActivity[]>([])
-  const [ruleDraft, setRuleDraft] = useState<RuleInput | null>(null)
+  const [serverRules, setServerRules] = useState<AccountRules[]>([])
+  const [ruleDraft, setRuleDraft] = useState<ServerRuleInput | null>(null)
   const takeRuleDraft = useCallback(() => setRuleDraft(null), [])
   /** The email a clicked notification asked to show; cleared once it is scrolled into view. */
   const [focusKey, setFocusKey] = useState<string | null>(null)
@@ -70,7 +71,9 @@ export function App(): React.JSX.Element {
     void window.narsil.getMeetings().then(setMeetings)
     void window.narsil.getRules().then(setRules)
     void window.narsil.getRuleActivity().then(setActivity)
+    void window.narsil.getServerRules().then(setServerRules)
     const offs = [
+      window.narsil.onServerRulesChanged(setServerRules),
       window.narsil.onStatusChanged(setStatus),
       window.narsil.onInboxChanged(setInbox),
       window.narsil.onMeetingsChanged(setMeetings),
@@ -125,8 +128,8 @@ export function App(): React.JSX.Element {
     [celebrate]
   )
 
-  const onCreateRule = useCallback((from: string) => {
-    setRuleDraft(ruleDraftFromEmail(from))
+  const onCreateRule = useCallback((from: string, accountId: string) => {
+    setRuleDraft(serverRuleDraftFromEmail(from, accountId))
     setTab('rules')
   }, [])
 
@@ -217,6 +220,7 @@ export function App(): React.JSX.Element {
         {tab === 'rules' && (
           <Rules
             rules={rules}
+            serverRules={serverRules}
             activity={activity}
             accounts={status.accounts}
             incomingDraft={ruleDraft}

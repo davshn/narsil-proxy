@@ -1,4 +1,4 @@
-import type { AccountSettings, MailFolder, Meeting, ProviderKind } from '@shared/types'
+import type { AccountSettings, MailFolder, Meeting, NewServerRule, ProviderKind, ServerRule } from '@shared/types'
 import type { ParsedEmail } from '../domain/email'
 
 /**
@@ -47,9 +47,34 @@ export interface CalendarProvider {
   upcoming(now?: Date): Promise<Meeting[]>
 }
 
+/**
+ * Thrown by a RuleProvider when the account was connected before Narsil asked for the rule
+ * permission (Gmail `gmail.settings.basic`, Outlook `MailboxSettings.ReadWrite`). The account
+ * keeps working for mail; only its rules need a new sign-in.
+ */
+export class ReconnectRequiredError extends Error {
+  constructor() {
+    super('Reconecta esta cuenta para administrar sus reglas.')
+    this.name = 'ReconnectRequiredError'
+  }
+}
+
+/**
+ * Rules stored in the account itself (Gmail filters, Outlook inbox rules), so they keep working
+ * with the PC off. Gmail filters cannot be updated: editing is remove, then create.
+ */
+export interface RuleProvider {
+  /** Every rule of the account; those Narsil cannot map come back with `managedByNarsil: false`. */
+  list(): Promise<ServerRule[]>
+  /** Creates an already normalized rule and returns it as `list()` would show it. */
+  create(rule: NewServerRule): Promise<ServerRule>
+  remove(ruleId: string): Promise<void>
+}
+
 export interface AccountConnection {
   mail: MailProvider
   calendar: CalendarProvider
+  rules: RuleProvider
 }
 
 export interface AddedAccount {
@@ -64,6 +89,13 @@ export interface ProviderAuth {
   isConfigured(): boolean
   /** Interactive browser sign-in for a new account. Rejects if the user cancels or it times out. */
   addAccount(): Promise<AddedAccount>
+  /**
+   * Runs the browser sign-in again for a stored account, e.g. to grant new permissions. The
+   * signed-in mailbox must be `email` (case-insensitive); then its credentials are replaced and
+   * the account id stays. A different mailbox is rejected and the old credentials stay.
+   * A second call for the same account while one runs joins it.
+   */
+  reconnect(accountId: string, email: string): Promise<void>
   /** Revokes or forgets the account's credentials. Never throws for an unknown id. */
   removeAccount(accountId: string): Promise<void>
   /** Mail and calendar for a stored account, or null when its credentials are missing. */
