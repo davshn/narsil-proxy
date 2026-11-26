@@ -56,7 +56,7 @@ Narsil appears as a steel shard above the taskbar. Click it to open the panel, t
 2. **Conectar Google**: your browser opens. Sign in and allow access.
 3. **Guardar clave**: paste your Anthropic API key. If `ANTHROPIC_API_KEY` is set in your environment, Narsil uses that instead.
 
-Secrets are encrypted with Windows DPAPI (Electron `safeStorage`) under `%APPDATA%\narsil\secrets`.
+Secrets are encrypted with Windows DPAPI (Electron `safeStorage`) under `%APPDATA%\narsil-proxy\secrets`.
 
 ## Using it
 
