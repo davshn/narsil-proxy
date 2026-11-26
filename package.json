@@ -1,5 +1,5 @@
 {
-  "name": "narsil",
+  "name": "narsil-proxy",
   "version": "0.1.0",
   "description": "Narsil: a floating Windows desktop assistant that triages Gmail and reminds you of Google Calendar meetings.",
   "main": "./out/main/index.js",
