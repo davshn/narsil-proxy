@@ -10,6 +10,12 @@ import type { ParsedEmail } from '../domain/email'
 export interface MailProvider {
   /** Ids of unread inbox messages from the last two days, newest first, at most 20. */
   listUnread(): Promise<string[]>
+  /**
+   * A cheap opaque token that changes whenever the inbox may have new mail
+   * (Gmail: the mailbox historyId; Outlook: inbox counts plus the newest message id).
+   * Equal tokens mean listUnread() would return nothing new.
+   */
+  changeToken(): Promise<string>
   /** The message with `summary.accountId` set to this account's id. */
   getMessage(id: string): Promise<ParsedEmail>
   /** Removes from the inbox and marks read. The message stays recoverable. */

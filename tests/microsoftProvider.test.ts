@@ -310,6 +310,31 @@ describe('Outlook mail through Microsoft Graph', () => {
     expect(url.searchParams.has('$orderby')).toBe(false)
   })
 
+  it('builds the change token from the inbox counts and the newest message id', async () => {
+    fetchMock.mockImplementation(async (url) =>
+      String(url).includes('/messages')
+        ? respond(200, { value: [{ id: 'newest' }] })
+        : respond(200, { unreadItemCount: 3, totalItemCount: 120 })
+    )
+    expect(await connect().mail.changeToken()).toBe('3:120:newest')
+    const urls = calls().map((c) => new URL(c.url))
+    expect(calls().every((c) => c.method === 'GET')).toBe(true)
+    const folder = urls.find((u) => u.pathname.endsWith('/me/mailFolders/inbox'))
+    const messages = urls.find((u) => u.pathname.endsWith('/me/mailFolders/inbox/messages'))
+    expect(urls).toHaveLength(2)
+    expect(folder?.searchParams.get('$select')).toBe('unreadItemCount,totalItemCount')
+    expect(messages?.searchParams.get('$top')).toBe('1')
+    expect(messages?.searchParams.get('$select')).toBe('id')
+    expect(messages?.searchParams.has('$orderby')).toBe(false)
+  })
+
+  it('ends the change token with an empty id when the inbox is empty', async () => {
+    fetchMock.mockImplementation(async (url) =>
+      String(url).includes('/messages') ? respond(200, { value: [] }) : respond(200, { unreadItemCount: 0, totalItemCount: 0 })
+    )
+    expect(await connect().mail.changeToken()).toBe('0:0:')
+  })
+
   it('gets a message as text and tags it with the account', async () => {
     fetchMock.mockImplementation(async () => respond(200, { id: 'm1', subject: 'Hola', body: { contentType: 'text', content: 'Cuerpo' } }))
     const email = await connect().mail.getMessage('m1')

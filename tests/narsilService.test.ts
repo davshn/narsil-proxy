@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NarsilService, type NarsilEvents } from '../src/main/app/narsilService'
 import { AccountRegistry, type SecretStore } from '../src/main/app/accounts'
 import { parseMessage, type ParsedEmail } from '../src/main/domain/email'
@@ -23,6 +23,11 @@ function makeMailbox() {
     senders: {} as Record<string, string>,
     meetings: [] as Meeting[],
     listError: null as Error | null,
+    /** What changeToken() returns; a test changes it when new mail "arrives". */
+    token: 't0',
+    tokenError: null as Error | null,
+    /** How many times listUnread() ran. */
+    listed: 0,
     archive: vi.fn<(id: string) => Promise<void>>(async () => undefined),
     trash: vi.fn<(id: string) => Promise<void>>(async () => undefined),
     save: vi.fn<(id: string) => Promise<void>>(async () => undefined),
@@ -65,8 +70,13 @@ class FakeProvider implements ProviderAuth {
     return {
       mail: {
         listUnread: async () => {
+          box.listed++
           if (box.listError) throw box.listError
           return box.ids
+        },
+        changeToken: async () => {
+          if (box.tokenError) throw box.tokenError
+          return box.token
         },
         getMessage: async (id) =>
           parseMessage(
@@ -150,7 +160,8 @@ async function makeService(options: ServiceOptions = {}): Promise<Setup> {
     reminder: vi.fn(),
     statusChanged: vi.fn(),
     rulesChanged: vi.fn(),
-    activityChanged: vi.fn()
+    activityChanged: vi.fn(),
+    newEmails: vi.fn()
   }
   const service = new NarsilService({
     store,
@@ -557,5 +568,167 @@ describe('NarsilService rules', () => {
     service.deleteRule('r1')
     expect(service.rules()).toEqual([])
     expect(repo.save).toHaveBeenCalledTimes(2)
+  })
+})
+
+/** Lets every already-resolved fake call finish; the fakes never wait on real I/O. */
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
+
+describe('NarsilService change check', () => {
+  let running: NarsilService | null = null
+
+  async function startWithTimers(options: ServiceOptions = {}): Promise<Setup> {
+    const setup = await makeService(options)
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    setup.service.start()
+    running = setup.service
+    await settle()
+    return setup
+  }
+
+  afterEach(() => {
+    running?.stop()
+    running = null
+    vi.useRealTimers()
+  })
+
+  it('skips the full list while the change token is unchanged and lists as soon as it changes', async () => {
+    const { google } = await startWithTimers()
+    const box = google.box('g1')
+    expect(box.listed).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(15_000)
+    await settle()
+    expect(box.listed).toBe(1)
+
+    box.token = 't1'
+    await vi.advanceTimersByTimeAsync(15_000)
+    await settle()
+    expect(box.listed).toBe(2)
+  })
+
+  it('still lists every 60 seconds when the token never changes', async () => {
+    const { google } = await startWithTimers()
+    await vi.advanceTimersByTimeAsync(60_000)
+    await settle()
+    expect(google.box('g1').listed).toBe(2)
+  })
+
+  it('records a failed change check as the account error without throwing, and lists on the next full poll', async () => {
+    const { service, google } = await startWithTimers()
+    const box = google.box('g1')
+    box.tokenError = new Error('token down')
+
+    await vi.advanceTimersByTimeAsync(15_000)
+    await settle()
+    expect(service.status().lastError).toBe('ana@gmail.com: token down')
+    expect(box.listed).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(45_000)
+    await settle()
+    expect(box.listed).toBe(2)
+  })
+})
+
+describe('NarsilService new-email notifications', () => {
+  it('does not announce the emails already unread on the first load', async () => {
+    const { service, google, events } = await makeService()
+    google.box('g1').ids = ['a']
+    fake.triage.mockResolvedValue(TRIAGE)
+
+    await service.refresh()
+    await service.refresh()
+
+    expect(service.inboxItems()).toHaveLength(1)
+    expect(events.newEmails).not.toHaveBeenCalled()
+  })
+
+  it('announces mail that arrives later once, with its triage', async () => {
+    const { service, google, events } = await makeService()
+    const box = google.box('g1')
+    box.ids = ['a']
+    fake.triage.mockResolvedValue(TRIAGE)
+    await service.refresh()
+
+    box.ids = ['b', 'a']
+    await service.refresh()
+    await service.refresh()
+
+    expect(events.newEmails).toHaveBeenCalledTimes(1)
+    expect(events.newEmails.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({ key: 'g1:b', triage: TRIAGE, email: expect.objectContaining({ subject: 'Asunto b' }) })
+    ])
+  })
+
+  it('announces new mail after a failed triage attempt too', async () => {
+    const { service, google, events } = await makeService()
+    const box = google.box('g1')
+    await service.refresh()
+    fake.triage.mockRejectedValue(new Error('rate limited'))
+
+    box.ids = ['b']
+    await service.refresh()
+
+    expect(events.newEmails).toHaveBeenCalledTimes(1)
+    expect(events.newEmails.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({ key: 'g1:b', triage: null, triageError: 'rate limited' })
+    ])
+  })
+
+  it('does not announce mail a rule handled', async () => {
+    const { service, google, events } = await makeService({ repo: makeRepo([promoRule]) })
+    const box = google.box('g1')
+    await service.refresh()
+    fake.triage.mockResolvedValue(TRIAGE)
+
+    box.ids = ['promo', 'b']
+    box.senders.promo = 'promo@shop.example'
+    await service.refresh()
+
+    expect(box.trash).toHaveBeenCalledWith('promo')
+    expect(events.newEmails).toHaveBeenCalledTimes(1)
+    expect(events.newEmails.mock.calls[0]?.[0].map((i: { key: string }) => i.key)).toEqual(['g1:b'])
+  })
+
+  it('never announces an empty list when every new email was handled by a rule', async () => {
+    const { service, google, events } = await makeService({ repo: makeRepo([promoRule]) })
+    const box = google.box('g1')
+    await service.refresh()
+
+    box.ids = ['promo']
+    box.senders.promo = 'promo@shop.example'
+    await service.refresh()
+
+    expect(events.newEmails).not.toHaveBeenCalled()
+  })
+
+  it('announces several new emails of one poll in one event', async () => {
+    const { service, google, events } = await makeService()
+    const box = google.box('g1')
+    await service.refresh()
+    fake.triage.mockResolvedValue(TRIAGE)
+
+    box.ids = ['b', 'c']
+    await service.refresh()
+
+    expect(events.newEmails).toHaveBeenCalledTimes(1)
+    expect(events.newEmails.mock.calls[0]?.[0].map((i: { key: string }) => i.key).sort()).toEqual(['g1:b', 'g1:c'])
+  })
+
+  it('does not announce the unread mail an account already had when it was added', async () => {
+    const { service, microsoft, events } = await makeService()
+    await service.refresh()
+    microsoft.nextAccount = { accountId: 'm1', email: 'ana@outlook.com' }
+    microsoft.box('m1').ids = ['x']
+    fake.triage.mockResolvedValue(TRIAGE)
+
+    await service.addAccount('microsoft')
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['m1:x'])
+    expect(events.newEmails).not.toHaveBeenCalled()
+
+    microsoft.box('m1').ids = ['y', 'x']
+    await service.refresh()
+    expect(events.newEmails).toHaveBeenCalledTimes(1)
+    expect(events.newEmails.mock.calls[0]?.[0].map((i: { key: string }) => i.key)).toEqual(['m1:y'])
   })
 })

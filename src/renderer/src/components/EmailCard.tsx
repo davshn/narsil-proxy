@@ -20,6 +20,8 @@ interface EmailCardProps {
   item: InboxItem
   /** The receiving account's email, shown only when several accounts are connected. */
   accountLabel?: string | undefined
+  /** True briefly after a notification for this email was clicked. */
+  highlighted?: boolean
   onAction(key: string, action: QuickAction): Promise<string | null>
   onReply(key: string, body: string): Promise<string | null>
   onCreateRule(from: string): void
@@ -34,7 +36,14 @@ function senderName(from: string): string {
   return match?.[1] ?? from
 }
 
-export function EmailCard({ item, accountLabel, onAction, onReply, onCreateRule }: EmailCardProps): React.JSX.Element {
+export function EmailCard({
+  item,
+  accountLabel,
+  highlighted = false,
+  onAction,
+  onReply,
+  onCreateRule
+}: EmailCardProps): React.JSX.Element {
   const { email, triage } = item
   const [draft, setDraft] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -54,7 +63,7 @@ export function EmailCard({ item, accountLabel, onAction, onReply, onCreateRule 
   const quick: QuickAction[] = ['save', 'archive', 'delete']
 
   return (
-    <article className="mail" aria-busy={busy}>
+    <article className={highlighted ? 'mail mail--focus' : 'mail'} data-key={item.key} aria-busy={busy}>
       <header className="mail__head">
         <span className="mail__from" title={email.from}>
           {senderName(email.from)}

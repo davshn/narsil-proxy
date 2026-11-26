@@ -102,7 +102,24 @@ The **Reglas** (rules) tab holds rules you define, such as "sender contains `sho
 
 Rules apply to the mail of every connected account. They never delete permanently: "Eliminar" moves the email to Trash in Gmail, where it stays for 30 days, or to Deleted Items in Outlook.
 
-Narsil checks mail every minute and the calendars every 5 minutes. Each account is checked on its own, so a problem with one account shows an error that starts with its address while the others keep working. Reminders cover timed events on each account's main calendar in the next 24 hours. All-day, cancelled and declined events are skipped. If Narsil starts less than 5 minutes before a meeting, you get only the 5-minute reminder.
+### New-mail notifications
+
+Every 15 seconds Narsil runs a cheap change check on each account: Gmail's mailbox `historyId`, or the Outlook inbox's unread and total counts plus its newest message id. Only when that changes does Narsil read the full list of unread mail. The full list is also read every 60 seconds as a safety net.
+
+When new mail arrives, rules run first, then Claude reads it, then Windows shows a notification with the sender, the subject, Claude's summary and its suggestion (for example "Sugerencia: archivar"). With several accounts the notification also names the account. When several emails arrive in one check you get one notification, "N correos nuevos", listing up to three subjects.
+
+Clicking a notification opens the panel on the **Correo** tab and scrolls to that email, which flashes an ember outline. A grouped notification just opens the list.
+
+These never notify:
+
+- mail that was already unread when Narsil started, or when you added the account,
+- mail a rule handled.
+
+This is fast polling, not true push. Push needs a public HTTPS endpoint that Microsoft Graph can call, and a Google Cloud Pub/Sub topic for Gmail, which a desktop app on your own PC does not have.
+
+### Check cadence
+
+Narsil checks each inbox for changes every 15 seconds, reads the full unread list every minute, and reads the calendars every 5 minutes. Each account is checked on its own, so a problem with one account shows an error that starts with its address while the others keep working. Reminders cover timed events on each account's main calendar in the next 24 hours. All-day, cancelled and declined events are skipped. If Narsil starts less than 5 minutes before a meeting, you get only the 5-minute reminder.
 
 ## Claude usage and privacy
 

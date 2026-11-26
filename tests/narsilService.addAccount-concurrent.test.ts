@@ -34,6 +34,7 @@ vi.mock('../src/main/adapters/gmail', () => ({
   fetchProfileEmail: async () => 'ana@gmail.com',
   GmailService: class {
     listUnread = async () => []
+    changeToken = async () => '0'
   }
 }))
 vi.mock('../src/main/adapters/calendar', () => ({
@@ -67,7 +68,8 @@ function makeService(store: SecretStore, google: unknown, microsoft: unknown) {
     reminder: vi.fn(),
     statusChanged: vi.fn(),
     rulesChanged: vi.fn(),
-    activityChanged: vi.fn()
+    activityChanged: vi.fn(),
+    newEmails: vi.fn()
   }
   const service = new NarsilService({
     store,

@@ -31,6 +31,14 @@ export class GmailService implements MailProvider {
     return (res.data.messages ?? []).flatMap((m) => (m.id ? [m.id] : []))
   }
 
+  /** The mailbox historyId, which Gmail advances on every change to the mailbox. */
+  async changeToken(): Promise<string> {
+    const res = await this.api.users.getProfile({ userId: 'me' })
+    const historyId = res.data.historyId
+    if (!historyId) throw new Error('Google no devolvió el historial del buzón.')
+    return historyId
+  }
+
   async getMessage(id: string): Promise<ParsedEmail> {
     const res = await this.api.users.messages.get({ userId: 'me', id, format: 'full' })
     return parseMessage(res.data, this.accountId)

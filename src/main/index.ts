@@ -2,7 +2,7 @@ import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeIm
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { IPC, type ActionResult } from '@shared/types'
+import { IPC, type Account, type ActionResult, type EmailAction, type InboxItem } from '@shared/types'
 import { SecureStore } from './adapters/secureStore'
 import { NarsilService, type NarsilEvents } from './app/narsilService'
 import { AccountRegistry, migrateLegacyGoogleTokens } from './app/accounts'
@@ -114,6 +114,69 @@ function createTray(): void {
   tray.on('click', () => (win?.isVisible() ? win.hide() : win?.showInactive()))
 }
 
+const SUGGESTION: Record<EmailAction, string> = {
+  save: 'guardar',
+  archive: 'archivar',
+  delete: 'eliminar',
+  reply: 'responder'
+}
+const MAX_TITLE = 80
+const MAX_GROUP_SUBJECTS = 3
+
+/** Shown notifications stay referenced until clicked or closed; a collected one loses its click handler. */
+const liveNotifications = new Set<Notification>()
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? text.slice(0, max - 1).trimEnd() + '…' : text
+}
+
+function senderName(from: string): string {
+  return /^\s*"?([^"<]+?)"?\s*</.exec(from)?.[1] ?? from
+}
+
+/** Shows the panel expanded and tells the renderer which email to bring into view (null: just the list). */
+function focusEmail(key: string | null): void {
+  if (!win || win.isDestroyed()) return
+  win.show()
+  win.focus()
+  placeWindow(EXPANDED)
+  send(IPC.focusEmail, key)
+}
+
+/** One notification per poll: the email itself when one arrived, a count when several did. */
+function notifyNewEmails(items: InboxItem[], accounts: Account[]): void {
+  const [first] = items
+  if (!first) return
+  let title: string
+  let body: string
+  let key: string | null
+  if (items.length === 1) {
+    const { email, triage } = first
+    // Plain concatenation: email text is data and never goes through a template or markup.
+    title = truncate(senderName(email.from) + ' · ' + email.subject, MAX_TITLE)
+    body = triage ? triage.summary + '\nSugerencia: ' + SUGGESTION[triage.recommendedAction] : email.snippet
+    const account = accounts.length > 1 ? accounts.find((a) => a.id === email.accountId) : undefined
+    if (account) body += '\n' + account.email
+    key = first.key
+  } else {
+    title = `${items.length} correos nuevos`
+    body = items
+      .slice(0, MAX_GROUP_SUBJECTS)
+      .map((item) => item.email.subject)
+      .join('\n')
+    key = null
+  }
+  const notification = new Notification({ title, body, icon: trayIcon() })
+  liveNotifications.add(notification)
+  const release = (): void => void liveNotifications.delete(notification)
+  notification.on('click', () => {
+    release()
+    focusEmail(key)
+  })
+  notification.on('close', release)
+  notification.show()
+}
+
 async function run(fn: () => Promise<void> | void): Promise<ActionResult> {
   try {
     await fn()
@@ -195,6 +258,7 @@ if (!app.requestSingleInstanceLock()) {
       statusChanged: (status) => send(IPC.statusChanged, status),
       rulesChanged: (rules) => send(IPC.rulesChanged, rules),
       activityChanged: (activity) => send(IPC.ruleActivityChanged, activity),
+      newEmails: (items) => notifyNewEmails(items, service?.status().accounts ?? []),
       reminder: (alert) => {
         send(IPC.reminder, alert)
         win?.showInactive()

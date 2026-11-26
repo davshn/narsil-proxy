@@ -21,6 +21,8 @@ import type { AccountConnection, MailProvider, ProviderAuth } from './ports'
 import type { AccountRegistry, SecretStore } from './accounts'
 
 const INBOX_POLL_MS = 60_000
+/** The cheap change check; a full inbox poll runs only when an account's token changed. */
+const CHANGE_CHECK_MS = 15_000
 const CALENDAR_POLL_MS = 5 * 60_000
 const REMINDER_TICK_MS = 15_000
 const MAX_ACTIVITY = 50
@@ -32,6 +34,11 @@ export interface NarsilEvents {
   statusChanged(status: AppStatus): void
   rulesChanged(rules: Rule[]): void
   activityChanged(activity: RuleActivity[]): void
+  /**
+   * Emails that arrived since the previous poll of one account, after their triage attempt.
+   * Never empty. Excludes emails a rule handled and those present on the account's first load.
+   */
+  newEmails(items: InboxItem[]): void
 }
 
 /** One provider per kind, each with the extra call that stores its app registration. */
@@ -104,6 +111,10 @@ export class NarsilService {
   /** One sign-in per provider kind; a second click joins it instead of starting another. */
   private readonly adding = new Map<ProviderKind, Promise<void>>()
   private readonly inboxBusy = new Set<string>()
+  /** The change token each account had when its inbox was last listed successfully. */
+  private readonly changeTokens = new Map<string, string>()
+  /** Accounts whose first successful inbox load is done; only later mail is announced. */
+  private readonly baselineLoaded = new Set<string>()
   private ruleList: Rule[]
   private activity: RuleActivity[] = []
 
@@ -120,6 +131,7 @@ export class NarsilService {
   start(): void {
     this.timers.push(
       setInterval(() => void this.pollInbox(), INBOX_POLL_MS),
+      setInterval(() => void this.checkInboxChanges(), CHANGE_CHECK_MS),
       setInterval(() => void this.pollCalendar(), CALENDAR_POLL_MS),
       setInterval(() => this.checkReminders(), REMINDER_TICK_MS)
     )
@@ -360,6 +372,8 @@ export class NarsilService {
     this.connections.delete(accountId)
     for (const [key, tracked] of [...this.inbox]) if (tracked.accountId === accountId) this.inbox.delete(key)
     this.meetingsByAccount.delete(accountId)
+    this.changeTokens.delete(accountId)
+    this.baselineLoaded.delete(accountId)
     this.mergeMeetings()
     for (const source of [...this.errors.keys()]) if (source.startsWith(`${accountId}:`)) this.errors.delete(source)
   }
@@ -431,14 +445,53 @@ export class NarsilService {
     await Promise.all([...this.connections.values()].map((c) => this.pollAccountInbox(c)))
   }
 
-  private async pollAccountInbox(connected: Connected): Promise<void> {
+  /** The fast tick: lists an account's inbox only when its change token moved. Never throws. */
+  private async checkInboxChanges(): Promise<void> {
+    await Promise.all([...this.connections.values()].map((c) => this.checkAccountChanges(c)))
+  }
+
+  private async checkAccountChanges(connected: Connected): Promise<void> {
+    const { account, connection } = connected
+    if (this.inboxBusy.has(account.id)) return
+    let token: string
+    try {
+      token = await connection.mail.changeToken()
+    } catch (error) {
+      if (!this.isLive(connected)) return
+      // Forget the token so the next check that works lists the inbox; the full poll still runs meanwhile.
+      this.changeTokens.delete(account.id)
+      this.setError(`${account.id}:mail`, `${account.email}: ${message(error)}`)
+      return
+    }
+    if (!this.isLive(connected) || this.changeTokens.get(account.id) === token) return
+    await this.pollAccountInbox(connected, token)
+  }
+
+  /**
+   * Lists one account's inbox, applies rules, triages new emails and announces the ones that
+   * arrived since the previous poll. `knownToken` is the change token the caller just read.
+   */
+  private async pollAccountInbox(connected: Connected, knownToken?: string): Promise<void> {
     const { account, connection } = connected
     if (this.inboxBusy.has(account.id)) return
     this.inboxBusy.add(account.id)
     const source = `${account.id}:mail`
     try {
+      // Read the token before listing, so mail that arrives mid-poll still changes it afterwards.
+      let token = knownToken
+      let tokenError: unknown = null
+      if (token === undefined) {
+        try {
+          token = await connection.mail.changeToken()
+        } catch (error) {
+          tokenError = error
+        }
+      }
       const ids = await connection.mail.listUnread()
       if (!this.isLive(connected)) return
+      // Emails present on an account's first load were there before Narsil; only later ones are news.
+      const announce = this.baselineLoaded.has(account.id)
+      const arrived: Tracked[] = []
       const current = new Set(ids.map((id) => itemKey(account.id, id)))
       let changed = false
       for (const [key, tracked] of [...this.inbox]) {
@@ -456,14 +509,16 @@ export class NarsilService {
           if (!this.isLive(connected)) return
           // Rules run before triage, so handled emails never reach Claude.
           if (await this.applyRules(connection.mail, parsed)) continue
-          this.inbox.set(key, {
+          const tracked: Tracked = {
             key,
             accountId: account.id,
             parsed,
             item: { key, email: parsed.summary, triage: null },
             attempts: 0,
             triaging: false
-          })
+          }
+          this.inbox.set(key, tracked)
+          if (announce) arrived.push(tracked)
           changed = true
         } catch {
           // One unreadable message must not block the rest; it is retried on the next poll.
@@ -475,8 +530,17 @@ export class NarsilService {
         if (tracked.accountId !== account.id) continue
         if (!tracked.item.triage && tracked.attempts < MAX_TRIAGE_ATTEMPTS) await this.triage(tracked)
       }
+      if (!this.isLive(connected)) return
+      this.baselineLoaded.add(account.id)
+      if (token === undefined) this.changeTokens.delete(account.id)
+      else this.changeTokens.set(account.id, token)
+      // An action or a rule may have removed an email while it was being triaged.
+      const fresh = arrived.filter((t) => this.inbox.has(t.key)).map((t) => t.item)
+      if (fresh.length > 0) this.events.newEmails(fresh)
       if (unreadable > 0) {
         this.setError(source, `${account.email}: no se pudieron leer ${unreadable} correo(s); se reintentará en la próxima revisión.`)
+      } else if (tokenError !== null) {
+        this.setError(source, `${account.email}: ${message(tokenError)}`)
       } else this.clearError(source)
     } catch (error) {
       if (this.isLive(connected)) this.setError(source, `${account.email}: ${message(error)}`)

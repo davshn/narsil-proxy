@@ -141,6 +141,8 @@ export interface NarsilApi {
   onMeetingsChanged(listener: (meetings: Meeting[]) => void): () => void
   onReminder(listener: (alert: ReminderAlert) => void): () => void
   onStatusChanged(listener: (status: AppStatus) => void): () => void
+  /** A new-mail notification was clicked: show that email, or just the mail list (null) for a group. */
+  onFocusEmail(listener: (key: string | null) => void): () => void
 }
 
 export const IPC = {
@@ -165,5 +167,6 @@ export const IPC = {
   inboxChanged: 'narsil:inbox-changed',
   meetingsChanged: 'narsil:meetings-changed',
   reminder: 'narsil:reminder',
-  statusChanged: 'narsil:status-changed'
+  statusChanged: 'narsil:status-changed',
+  focusEmail: 'narsil:focus-email'
 } as const

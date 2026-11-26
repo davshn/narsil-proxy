@@ -29,7 +29,8 @@ const api: NarsilApi = {
   onInboxChanged: (listener) => subscribe(IPC.inboxChanged, listener),
   onMeetingsChanged: (listener) => subscribe(IPC.meetingsChanged, listener),
   onReminder: (listener) => subscribe(IPC.reminder, listener),
-  onStatusChanged: (listener) => subscribe(IPC.statusChanged, listener)
+  onStatusChanged: (listener) => subscribe(IPC.statusChanged, listener),
+  onFocusEmail: (listener) => subscribe<string | null | undefined>(IPC.focusEmail, (key) => listener(key ?? null))
 }
 
 contextBridge.exposeInMainWorld('narsil', api)

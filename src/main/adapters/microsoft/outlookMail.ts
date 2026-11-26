@@ -21,6 +21,11 @@ interface MessageList {
   value?: Array<{ id?: string | null; receivedDateTime?: string | null }>
 }
 
+interface InboxFolder {
+  unreadItemCount?: number | null
+  totalItemCount?: number | null
+}
+
 /** Outlook mail for one account through Microsoft Graph. */
 export class OutlookMail implements MailProvider {
   constructor(
@@ -42,6 +47,20 @@ export class OutlookMail implements MailProvider {
       .flatMap((m) => (m.id ? [{ id: m.id, at: Date.parse(m.receivedDateTime ?? '') || 0 }] : []))
       .sort((a, b) => b.at - a.at)
       .map((m) => m.id)
+  }
+
+  /** `${unreadItemCount}:${totalItemCount}:${newestId}` of the inbox; any new message changes it. */
+  async changeToken(): Promise<string> {
+    const [folder, newest] = await Promise.all([
+      this.graph.request<InboxFolder>('GET', '/me/mailFolders/inbox', {
+        query: { $select: 'unreadItemCount,totalItemCount' }
+      }),
+      // Without $orderby Graph returns the newest message first.
+      this.graph.request<MessageList>('GET', '/me/mailFolders/inbox/messages', {
+        query: { $top: '1', $select: 'id' }
+      })
+    ])
+    return `${folder?.unreadItemCount ?? ''}:${folder?.totalItemCount ?? ''}:${newest?.value?.[0]?.id ?? ''}`
   }
 
   async getMessage(id: string): Promise<ParsedEmail> {

@@ -125,6 +125,24 @@ describe('GoogleProvider', () => {
     expect(JSON.parse(store.data.get('google-tokens.a2') ?? '{}')).toEqual({ refresh_token: 'r2', access_token: 'old2' })
   })
 
+  it('reads the Gmail change token from the profile historyId', async () => {
+    const store = memoryStore({
+      'google-client': CLIENT,
+      'google-tokens.a1': JSON.stringify({ refresh_token: 'r1', access_token: 'a1', expiry_date: Date.now() + 3_600_000 })
+    })
+    const { provider, clients } = makeProvider(store)
+    const connection = provider.connect('a1')
+    const request = vi
+      .spyOn(clients[0] as OAuth2Client, 'request')
+      .mockResolvedValue({ data: { emailAddress: 'ana@gmail.com', historyId: '98765' } } as never)
+
+    expect(await connection?.mail.changeToken()).toBe('98765')
+    expect(request).toHaveBeenCalledTimes(1)
+    const options = request.mock.calls[0]?.[0] as { url?: string; method?: string }
+    expect(options.method).toBe('GET')
+    expect(String(options.url)).toMatch(/\/gmail\/v1\/users\/me\/profile$/)
+  })
+
   it('returns no connection for an account without stored tokens', () => {
     const { provider } = makeProvider(memoryStore({ 'google-client': CLIENT }))
     expect(provider.connect('missing')).toBeNull()

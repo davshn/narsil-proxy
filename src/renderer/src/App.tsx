@@ -28,6 +28,9 @@ export function App(): React.JSX.Element {
   const [activity, setActivity] = useState<RuleActivity[]>([])
   const [ruleDraft, setRuleDraft] = useState<RuleInput | null>(null)
   const takeRuleDraft = useCallback(() => setRuleDraft(null), [])
+  /** The email a clicked notification asked to show; cleared once it is scrolled into view. */
+  const [focusKey, setFocusKey] = useState<string | null>(null)
+  const [highlighted, setHighlighted] = useState<string | null>(null)
 
   const setExpanded = useCallback((value: boolean) => {
     setExpandedState(value)
@@ -53,10 +56,32 @@ export function App(): React.JSX.Element {
         setAlert(a)
         setTab('meetings')
         setExpanded(true)
+      }),
+      window.narsil.onFocusEmail((key) => {
+        setExpanded(true)
+        setTab('mail')
+        setFocusKey(key)
       })
     ]
     return () => offs.forEach((off) => off())
   }, [setExpanded])
+
+  // Runs after the panel rendered the mail list, so the card exists to scroll to.
+  useEffect(() => {
+    if (focusKey === null || !expanded || tab !== 'mail') return
+    setFocusKey(null)
+    const card = document.querySelector<HTMLElement>(`[data-key="${CSS.escape(focusKey)}"]`)
+    if (!card) return
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    card.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest' })
+    setHighlighted(focusKey)
+  }, [focusKey, expanded, tab])
+
+  useEffect(() => {
+    if (highlighted === null) return
+    const timer = setTimeout(() => setHighlighted(null), 2000)
+    return () => clearTimeout(timer)
+  }, [highlighted])
 
   const onAction = useCallback(async (key: string, action: 'archive' | 'delete' | 'save') => {
     const result = await window.narsil.applyAction(key, action)
@@ -169,6 +194,7 @@ export function App(): React.JSX.Element {
                 key={item.key}
                 item={item}
                 accountLabel={accountLabel(item.email.accountId)}
+                highlighted={item.key === highlighted}
                 onAction={onAction}
                 onReply={onReply}
                 onCreateRule={onCreateRule}

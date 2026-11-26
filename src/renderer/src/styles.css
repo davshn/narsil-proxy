@@ -255,6 +255,23 @@ textarea {
   opacity: 0.6;
 }
 
+/* The email a clicked notification opened: an ember outline that fades out over about 2 s. */
+.mail--focus {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
+  animation: mail-focus 2s ease-out forwards;
+}
+
+@keyframes mail-focus {
+  0%,
+  70% {
+    outline-color: var(--ember);
+  }
+  100% {
+    outline-color: transparent;
+  }
+}
+
 .mail__head {
   display: flex;
   justify-content: space-between;
@@ -564,6 +581,11 @@ textarea {
 
 @media (prefers-reduced-motion: reduce) {
   .shard--alert .shard__core {
+    animation: none;
+  }
+
+  /* Keep the outline steady; App removes the class after 2 s. */
+  .mail--focus {
     animation: none;
   }
 }
