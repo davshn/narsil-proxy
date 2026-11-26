@@ -15,24 +15,57 @@ vi.mock('../src/main/adapters/claude', () => ({
   describeClaudeError: (e: unknown) => (e instanceof Error ? e.message : String(e))
 }))
 
+/**
+ * A distinct real instant: strictly after every earlier clock read and strictly before every
+ * later one, so an email "arrives" unambiguously before or after the service's first load.
+ */
+function arrivalTime(): number {
+  const before = Date.now()
+  while (Date.now() === before) {
+    /* wait for the clock to move */
+  }
+  const at = Date.now()
+  while (Date.now() === at) {
+    /* wait for the clock to move */
+  }
+  return at
+}
+
 /** One fake mailbox and calendar behind a connected account. */
 function makeMailbox() {
-  return {
-    ids: [] as string[],
+  let ids: string[] = []
+  const box = {
+    /** The unread ids listUnread() returns. Assigning stamps each id not seen before as arriving now. */
+    get ids(): string[] {
+      return ids
+    },
+    set ids(next: string[]) {
+      for (const id of next) box.received[id] ??= arrivalTime()
+      ids = next
+    },
+    /** When each email arrived (epoch ms); set it before assigning `ids` to backdate an email. */
+    received: {} as Record<string, number>,
     bodies: {} as Record<string, string>,
     senders: {} as Record<string, string>,
     meetings: [] as Meeting[],
     listError: null as Error | null,
+    /** Ids whose getMessage() fails. */
+    badIds: new Set<string>(),
     /** What changeToken() returns; a test changes it when new mail "arrives". */
     token: 't0',
     tokenError: null as Error | null,
-    /** How many times listUnread() ran. */
+    /** When set, listUnread() and changeToken() wait on these before answering. */
+    listGate: null as Promise<void> | null,
+    tokenGate: null as Promise<void> | null,
+    /** How many times listUnread() and changeToken() ran. */
     listed: 0,
+    tokenCalls: 0,
     archive: vi.fn<(id: string) => Promise<void>>(async () => undefined),
     trash: vi.fn<(id: string) => Promise<void>>(async () => undefined),
     save: vi.fn<(id: string) => Promise<void>>(async () => undefined),
     reply: vi.fn<(email: ParsedEmail, body: string) => Promise<void>>(async () => undefined)
   }
+  return box
 }
 type Mailbox = ReturnType<typeof makeMailbox>
 
@@ -71,20 +104,26 @@ class FakeProvider implements ProviderAuth {
       mail: {
         listUnread: async () => {
           box.listed++
+          const snapshot = [...box.ids]
+          if (box.listGate) await box.listGate
           if (box.listError) throw box.listError
-          return box.ids
+          return snapshot
         },
         changeToken: async () => {
+          box.tokenCalls++
+          const token = box.token
+          if (box.tokenGate) await box.tokenGate
           if (box.tokenError) throw box.tokenError
-          return box.token
+          return token
         },
-        getMessage: async (id) =>
-          parseMessage(
+        getMessage: async (id) => {
+          if (box.badIds.has(id)) throw new Error('unreadable')
+          return parseMessage(
             {
               id,
               threadId: `t-${id}`,
               snippet: '',
-              internalDate: '1',
+              internalDate: String(box.received[id] ?? Date.now()),
               payload: {
                 mimeType: 'text/html',
                 headers: [
@@ -95,7 +134,8 @@ class FakeProvider implements ProviderAuth {
               }
             },
             accountId
-          ),
+          )
+        },
         archive: (id) => box.archive(id),
         trash: (id) => box.trash(id),
         save: (id) => box.save(id),
@@ -574,6 +614,20 @@ describe('NarsilService rules', () => {
 /** Lets every already-resolved fake call finish; the fakes never wait on real I/O. */
 const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+/** The keys of every newEmails event, one array per event. */
+const announcedKeys = (events: Setup['events']): string[][] =>
+  events.newEmails.mock.calls.map((call) => (call[0] as Array<{ key: string }>).map((i) => i.key))
+
 describe('NarsilService change check', () => {
   let running: NarsilService | null = null
 
@@ -627,6 +681,115 @@ describe('NarsilService change check', () => {
     await vi.advanceTimersByTimeAsync(45_000)
     await settle()
     expect(box.listed).toBe(2)
+  })
+
+  const tick = async (ms: number): Promise<void> => {
+    await vi.advanceTimersByTimeAsync(ms)
+    await settle()
+    await settle()
+  }
+
+  it('does not announce again an email that leaves the list window and comes back', async () => {
+    const { google, events } = await startWithTimers()
+    fake.triage.mockResolvedValue(TRIAGE)
+    const box = google.box('g1')
+    box.ids = ['b']
+    box.token = 't1'
+    await tick(15_000)
+    box.ids = ['c'] // b pushed out of the listed window by c
+    box.token = 't2'
+    await tick(15_000)
+    box.ids = ['b'] // c read elsewhere, b back in the window
+    box.token = 't3'
+    await tick(15_000)
+
+    expect(announcedKeys(events)).toEqual([['g1:b'], ['g1:c']])
+  })
+
+  it('never announces an email unread at the first load that enters the list window later', async () => {
+    const { service, google, events } = await startWithTimers({ prepare: ({ google }) => (google.box('g1').ids = ['new1']) })
+    fake.triage.mockResolvedValue(TRIAGE)
+    const box = google.box('g1')
+    // 'old' was unread at the first load but outside the listed window; 'new1' was read elsewhere.
+    box.received.old = Date.now() - 3_600_000
+    box.ids = ['old']
+    box.token = 't1'
+    await tick(15_000)
+
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['g1:old'])
+    expect(events.newEmails).not.toHaveBeenCalled()
+  })
+
+  it('does not announce a first-load email whose fetch failed when it loads later', async () => {
+    const { service, google, events } = await startWithTimers({
+      prepare: ({ google }) => {
+        google.box('g1').ids = ['a']
+        google.box('g1').badIds.add('a')
+      }
+    })
+    fake.triage.mockResolvedValue(TRIAGE)
+    expect(service.inboxItems()).toHaveLength(0)
+    google.box('g1').badIds.clear()
+    await tick(60_000)
+
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['g1:a'])
+    expect(events.newEmails).not.toHaveBeenCalled()
+  })
+
+  it('keeps a single change check pending while one hangs', async () => {
+    const { google } = await startWithTimers()
+    const box = google.box('g1')
+    const before = box.tokenCalls
+    box.tokenGate = new Promise(() => undefined)
+    await tick(15_000)
+    await tick(15_000)
+    await tick(15_000)
+
+    expect(box.tokenCalls - before).toBe(1)
+  })
+
+  it('does not save the change token after a poll that could not read an email, so the next check lists again', async () => {
+    const { service, google } = await startWithTimers()
+    fake.triage.mockResolvedValue(TRIAGE)
+    const box = google.box('g1')
+    box.ids = ['b']
+    box.badIds.add('b')
+    box.token = 't1'
+    await tick(15_000)
+    expect(box.listed).toBe(2)
+    expect(service.status().lastError).toBe(
+      'ana@gmail.com: no se pudieron leer 1 correo(s); se reintentará en la próxima revisión.'
+    )
+
+    box.badIds.clear()
+    await tick(15_000)
+    expect(box.listed).toBe(3)
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['g1:b'])
+    expect(service.status().lastError).toBeUndefined()
+  })
+
+  it('loads a re-added account at once while the poll of its removed predecessor still hangs', async () => {
+    const { service, google, events, registry } = await startWithTimers()
+    fake.triage.mockResolvedValue(TRIAGE)
+    const box = google.box('g1')
+    const gate = deferred<void>()
+    box.listGate = gate.promise
+    box.ids = ['old']
+    box.token = 't1'
+    await tick(15_000) // the old connection's poll hangs on its list
+    await service.removeAccount('g1')
+    box.listGate = null
+    box.ids = ['pre']
+    google.nextAccount = { accountId: 'g1', email: 'ana@gmail.com' }
+
+    await service.addAccount('google')
+    expect(registry.list().map((a) => a.id)).toEqual(['g1'])
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['g1:pre'])
+
+    gate.resolve()
+    await tick(15_000)
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['g1:pre'])
+    expect(events.newEmails).not.toHaveBeenCalled()
   })
 })
 
@@ -730,5 +893,44 @@ describe('NarsilService new-email notifications', () => {
     await service.refresh()
     expect(events.newEmails).toHaveBeenCalledTimes(1)
     expect(events.newEmails.mock.calls[0]?.[0].map((i: { key: string }) => i.key)).toEqual(['m1:y'])
+  })
+
+  it('drops an email whose account was removed while a rule ran on it', async () => {
+    const { service, google, events } = await makeService({ repo: makeRepo([promoRule]) })
+    const box = google.box('g1')
+    await service.refresh()
+    const action = deferred<void>()
+    box.trash.mockImplementation(() => action.promise)
+    box.ids = ['promo']
+    box.senders.promo = 'promo@shop.example'
+
+    const polling = service.refresh()
+    await vi.waitFor(() => expect(box.trash).toHaveBeenCalledWith('promo'))
+    await service.removeAccount('g1')
+    action.reject(new Error('quota')) // the rule failed, so the email would normally stay listed
+    await polling
+
+    expect(service.inboxItems()).toEqual([])
+    expect(events.newEmails).not.toHaveBeenCalled()
+  })
+
+  it('announces an email with the triage setAnthropicKey started for it', async () => {
+    const { service, google, events } = await makeService()
+    const box = google.box('g1')
+    await service.refresh()
+    const result = deferred<Triage>()
+    fake.triage.mockReturnValue(result.promise)
+    // The key arrives right after the poll listed 'b' and before it triages it.
+    events.inboxChanged.mockImplementationOnce(() => service.setAnthropicKey('new-key'))
+    box.ids = ['b']
+
+    const polling = service.refresh()
+    await settle()
+    result.resolve(TRIAGE)
+    await polling
+
+    expect(fake.triage).toHaveBeenCalledTimes(1)
+    expect(events.newEmails).toHaveBeenCalledTimes(1)
+    expect(events.newEmails.mock.calls[0]?.[0]).toEqual([expect.objectContaining({ key: 'g1:b', triage: TRIAGE })])
   })
 })
