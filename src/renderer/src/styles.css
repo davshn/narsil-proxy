@@ -1,0 +1,520 @@
+/*
+ * Narsil: forged steel with an ember core.
+ * Cool blue-steel surfaces carry the everyday state; molten gold is reserved for
+ * the two things that need you: what Narsil recommends and meetings about to start.
+ */
+:root {
+  --frost: #eef2f6;
+  --surface: #ffffff;
+  --ink: #1a2634;
+  --ink-soft: #566678;
+  --steel: #4e6f94;
+  --steel-deep: #2e4561;
+  --line: #d5dee8;
+  --ember: #f3b23c;
+  --ember-soft: #fff3dc;
+  --ember-ink: #6e4300;
+  --danger: #b23a34;
+
+  --font-text: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+
+  color: var(--ink);
+  font: 14px/1.45 var(--font-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--steel);
+  outline-offset: 2px;
+}
+
+/* ---------- Collapsed dock ---------- */
+
+.dock {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 8px;
+}
+
+.dock__grip {
+  -webkit-app-region: drag;
+  width: 44px;
+  height: 14px;
+  margin-bottom: 6px;
+  border-radius: 7px;
+  background: rgb(46 69 97 / 0.25);
+  cursor: grab;
+}
+
+.dock__avatar {
+  position: relative;
+  border: 0;
+  padding: 6px;
+  background: none;
+  cursor: pointer;
+  border-radius: 50%;
+  filter: drop-shadow(0 6px 10px rgb(26 38 52 / 0.35));
+}
+
+.dock__badge {
+  position: absolute;
+  top: 4px;
+  right: -2px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 12px;
+  background: var(--ember);
+  color: var(--ember-ink);
+  font: 700 13px/24px var(--font-display);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.shard__core {
+  opacity: 0.35;
+  transition: opacity 300ms ease;
+}
+
+.shard--alert .shard__core {
+  opacity: 1;
+  animation: ember 2.4s ease-in-out infinite;
+}
+
+@keyframes ember {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ---------- Expanded panel ---------- */
+
+.panel {
+  height: calc(100% - 16px);
+  margin: 8px;
+  display: flex;
+  flex-direction: column;
+  background: var(--frost);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 10px 28px rgb(26 38 52 / 0.28);
+  overflow: hidden;
+}
+
+.panel__head {
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 10px 14px;
+  background: var(--steel-deep);
+  color: #f2f6fa;
+}
+
+.panel__head button {
+  -webkit-app-region: no-drag;
+}
+
+.panel__title {
+  margin: 0 auto 0 0;
+  font: 600 17px/1 var(--font-display);
+  letter-spacing: 0.01em;
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.tab {
+  border: 0;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: transparent;
+  color: #c9d6e3;
+  cursor: pointer;
+}
+
+.tab[aria-pressed='true'] {
+  background: rgb(255 255 255 / 0.14);
+  color: #ffffff;
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #c9d6e3;
+  cursor: pointer;
+}
+
+.icon-btn:hover,
+.tab:hover {
+  background: rgb(255 255 255 / 0.1);
+}
+
+.panel__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  user-select: text;
+}
+
+.panel__error {
+  margin: 0;
+  padding: 8px 14px;
+  background: #fbe9e8;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.panel__foot {
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  text-align: right;
+}
+
+.empty {
+  margin: 24px 8px;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+/* ---------- Reminder banner: the one loud thing ---------- */
+
+.reminder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--ember);
+  color: var(--ember-ink);
+}
+
+.reminder__title {
+  display: block;
+  font: 600 16px/1.25 var(--font-display);
+}
+
+.reminder__when {
+  font-size: 13px;
+}
+
+.reminder__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.reminder .btn--ghost {
+  border-color: rgb(110 67 0 / 0.35);
+  color: var(--ember-ink);
+}
+
+/* ---------- Mail ---------- */
+
+.mail {
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: var(--surface);
+  border-left: 3px solid var(--steel);
+  border-radius: 4px 10px 10px 4px;
+}
+
+.mail[aria-busy='true'] {
+  opacity: 0.6;
+}
+
+.mail__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.mail__from {
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mail__subject {
+  margin: 2px 0 6px;
+  font: 600 15px/1.3 var(--font-display);
+}
+
+.mail__summary {
+  margin: 0 0 10px;
+}
+
+.mail__summary--pending {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.mail__advice {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.mail__replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.pill {
+  border: 1px solid var(--line);
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: var(--frost);
+  cursor: pointer;
+}
+
+.pill:hover {
+  border-color: var(--steel);
+}
+
+.pill--lead {
+  border-color: var(--ember);
+  background: var(--ember-soft);
+}
+
+.pill--ghost {
+  background: transparent;
+  color: var(--ink-soft);
+}
+
+.mail__draft textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--frost);
+  resize: vertical;
+}
+
+.mail__draft-actions,
+.mail__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.mail__error,
+.setup__error {
+  margin: 8px 0 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+/* ---------- Buttons ---------- */
+
+.btn {
+  border: 1px solid var(--line);
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--steel);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn--primary {
+  border-color: var(--steel-deep);
+  background: var(--steel-deep);
+  color: #ffffff;
+}
+
+.btn--ghost {
+  background: transparent;
+}
+
+.btn--delete:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* What Narsil recommends gets the ember. */
+.btn.btn--lead {
+  border-color: var(--ember);
+  background: var(--ember-soft);
+  color: var(--ember-ink);
+  font-weight: 600;
+}
+
+.link-btn {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--steel);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---------- Meetings ---------- */
+
+.meetings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.meeting {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 10px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.meeting__time {
+  display: block;
+  font: 600 16px/1.2 var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.meeting__day,
+.meeting__place {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.meeting__title {
+  display: block;
+  font-weight: 600;
+}
+
+.meeting__link {
+  font-size: 13px;
+  color: var(--steel);
+}
+
+/* ---------- Setup ---------- */
+
+.setup__intro {
+  margin: 4px 4px 12px;
+}
+
+.setup__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.step {
+  counter-increment: step;
+  position: relative;
+  padding: 12px 14px 14px 46px;
+  margin-bottom: 10px;
+  background: var(--surface);
+  border-radius: 10px;
+}
+
+.step::before {
+  content: counter(step);
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--frost);
+  border: 1px solid var(--line);
+  font: 600 12px/20px var(--font-display);
+  text-align: center;
+}
+
+.step--done::before {
+  content: '✓';
+  background: var(--steel);
+  border-color: var(--steel);
+  color: #ffffff;
+}
+
+.step h3 {
+  margin: 0 0 2px;
+  font: 600 15px/1.3 var(--font-display);
+}
+
+.step p {
+  margin: 0 0 8px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.setup__key {
+  display: flex;
+  gap: 6px;
+}
+
+.setup__key input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--frost);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shard--alert .shard__core {
+    animation: none;
+  }
+}
+
+.panel__body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.panel__body::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgb(78 111 148 / 0.35);
+}
