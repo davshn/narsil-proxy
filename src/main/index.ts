@@ -4,8 +4,11 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { IPC, type ActionResult } from '@shared/types'
 import { SecureStore } from './adapters/secureStore'
-import { NarsilService } from './app/narsilService'
+import { NarsilService, type NarsilEvents } from './app/narsilService'
+import { AccountRegistry, migrateLegacyGoogleTokens } from './app/accounts'
 import { RulesFileStore } from './adapters/rulesStore'
+import { GoogleProvider } from './adapters/google/provider'
+import { MicrosoftProvider } from './adapters/microsoft/provider'
 
 const COLLAPSED = { width: 150, height: 170 }
 const EXPANDED = { width: 460, height: 660 }
@@ -120,7 +123,11 @@ async function run(fn: () => Promise<void> | void): Promise<ActionResult> {
   }
 }
 
-const EmailId = z.string().min(1).max(256)
+/** `${accountId}:${messageId}`; Graph message ids are long, so allow room. */
+const ItemKey = z.string().min(1).max(1024)
+const AccountId = z.string().min(1).max(64)
+const ProviderSchema = z.enum(['google', 'microsoft'])
+const ClientId = z.string().max(100)
 const ActionSchema = z.enum(['archive', 'delete', 'save'])
 const ReplyBody = z.string().min(1).max(50_000)
 const ApiKey = z.string().max(500)
@@ -138,14 +145,15 @@ function registerIpc(svc: NarsilService): void {
   ipcMain.handle(IPC.getInbox, () => svc.inboxItems())
   ipcMain.handle(IPC.getMeetings, () => svc.upcomingMeetings())
   ipcMain.handle(IPC.refresh, () => run(() => svc.refresh()))
-  ipcMain.handle(IPC.connectGoogle, () => run(() => svc.connectGoogle()))
-  ipcMain.handle(IPC.disconnectGoogle, () => run(() => svc.disconnectGoogle()))
+  ipcMain.handle(IPC.addAccount, (_e, provider: unknown) => run(() => svc.addAccount(ProviderSchema.parse(provider))))
+  ipcMain.handle(IPC.removeAccount, (_e, id: unknown) => run(() => svc.removeAccount(AccountId.parse(id))))
+  ipcMain.handle(IPC.setMicrosoftClientId, (_e, id: unknown) => run(() => svc.setMicrosoftClientId(ClientId.parse(id))))
   ipcMain.handle(IPC.setAnthropicKey, (_e, key: unknown) => run(() => svc.setAnthropicKey(ApiKey.parse(key))))
-  ipcMain.handle(IPC.applyAction, (_e, id: unknown, action: unknown) =>
-    run(() => svc.applyAction(EmailId.parse(id), ActionSchema.parse(action)))
+  ipcMain.handle(IPC.applyAction, (_e, key: unknown, action: unknown) =>
+    run(() => svc.applyAction(ItemKey.parse(key), ActionSchema.parse(action)))
   )
-  ipcMain.handle(IPC.sendReply, (_e, id: unknown, body: unknown) =>
-    run(() => svc.sendReply(EmailId.parse(id), ReplyBody.parse(body)))
+  ipcMain.handle(IPC.sendReply, (_e, key: unknown, body: unknown) =>
+    run(() => svc.sendReply(ItemKey.parse(key), ReplyBody.parse(body)))
   )
   ipcMain.handle(IPC.importGoogleClient, () =>
     run(async () => {
@@ -178,7 +186,10 @@ if (!app.requestSingleInstanceLock()) {
     createWindow()
     createTray()
 
-    service = new NarsilService(new SecureStore(), {
+    const store = new SecureStore()
+    const accounts = new AccountRegistry(store)
+    const google = new GoogleProvider(store)
+    const events: NarsilEvents = {
       inboxChanged: (items) => send(IPC.inboxChanged, items),
       meetingsChanged: (meetings) => send(IPC.meetingsChanged, meetings),
       statusChanged: (status) => send(IPC.statusChanged, status),
@@ -194,7 +205,17 @@ if (!app.requestSingleInstanceLock()) {
           icon: trayIcon()
         }).show()
       }
-    }, new RulesFileStore())
+    }
+    service = new NarsilService({
+      store,
+      events,
+      rules: new RulesFileStore(),
+      accounts,
+      providers: { google, microsoft: new MicrosoftProvider(store) },
+      migrate: async () => {
+        await migrateLegacyGoogleTokens({ store, accounts, fetchEmail: (tokens) => google.emailForTokens(tokens) })
+      }
+    })
     registerIpc(service)
     service.start()
   })

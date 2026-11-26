@@ -4,7 +4,8 @@ import type { Meeting } from '@shared/types'
 
 const START = new Date('2026-11-26T15:00:00.000Z')
 const meeting: Meeting = {
-  id: 'evt-1',
+  id: 'acc-1:evt-1',
+  accountId: 'acc-1',
   title: 'Daily',
   start: START.toISOString(),
   end: new Date(START.getTime() + 30 * 60_000).toISOString()
@@ -76,14 +77,14 @@ describe('dueReminders', () => {
   })
 
   it('handles several meetings independently', () => {
-    const other: Meeting = { ...meeting, id: 'evt-2', title: '1:1' }
+    const other: Meeting = { ...meeting, id: 'acc-1:evt-2', title: '1:1' }
     const alerts = tick(minutesBefore(15), new Set(), [meeting, other])
-    expect(alerts.map((a) => a.meeting.id).sort()).toEqual(['evt-1', 'evt-2'])
+    expect(alerts.map((a) => a.meeting.id).sort()).toEqual(['acc-1:evt-1', 'acc-1:evt-2'])
   })
 })
 
 describe('toMeeting', () => {
-  it('maps a timed Google Calendar event', () => {
+  it('maps a timed Google Calendar event to a meeting of the given account', () => {
     expect(
       toMeeting({
         id: 'a',
@@ -93,9 +94,10 @@ describe('toMeeting', () => {
         end: { dateTime: '2026-11-26T15:30:00Z' },
         location: 'Room 1',
         hangoutLink: 'https://meet.google.com/abc'
-      })
+      }, 'acc-1')
     ).toEqual({
-      id: 'a',
+      id: 'acc-1:a',
+      accountId: 'acc-1',
       title: 'Planning',
       start: '2026-11-26T15:00:00.000Z',
       end: '2026-11-26T15:30:00.000Z',
@@ -105,12 +107,12 @@ describe('toMeeting', () => {
   })
 
   it('skips all-day events', () => {
-    expect(toMeeting({ id: 'b', start: { date: '2026-11-26' }, end: { date: '2026-11-27' } })).toBeNull()
+    expect(toMeeting({ id: 'b', start: { date: '2026-11-26' }, end: { date: '2026-11-27' } }, 'acc-1')).toBeNull()
   })
 
   it('skips cancelled events', () => {
     expect(
-      toMeeting({ id: 'c', status: 'cancelled', start: { dateTime: '2026-11-26T15:00:00Z' }, end: { dateTime: '2026-11-26T16:00:00Z' } })
+      toMeeting({ id: 'c', status: 'cancelled', start: { dateTime: '2026-11-26T15:00:00Z' }, end: { dateTime: '2026-11-26T16:00:00Z' } }, 'acc-1')
     ).toBeNull()
   })
 
@@ -121,13 +123,13 @@ describe('toMeeting', () => {
         start: { dateTime: '2026-11-26T15:00:00Z' },
         end: { dateTime: '2026-11-26T16:00:00Z' },
         attendees: [{ self: true, responseStatus: 'declined' }]
-      })
+      }, 'acc-1')
     ).toBeNull()
   })
 
   it('uses a placeholder title when the event has none', () => {
     expect(
-      toMeeting({ id: 'e', start: { dateTime: '2026-11-26T15:00:00Z' }, end: { dateTime: '2026-11-26T16:00:00Z' } })?.title
+      toMeeting({ id: 'e', start: { dateTime: '2026-11-26T15:00:00Z' }, end: { dateTime: '2026-11-26T16:00:00Z' } }, 'acc-1')?.title
     ).toBe('(Reunión sin título)')
   })
 })

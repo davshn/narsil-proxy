@@ -1,15 +1,28 @@
 import { gmail, type gmail_v1 } from '@googleapis/gmail'
 import type { OAuth2Client } from 'google-auth-library'
 import { buildReplyRaw, parseMessage, type ParsedEmail } from '../domain/email'
+import type { MailProvider } from '../app/ports'
 
 /** Unread inbox mail from the last two days, excluding Gmail's promotions and social tabs. */
 const INBOX_QUERY = 'in:inbox is:unread newer_than:2d -category:promotions -category:social'
 const MAX_MESSAGES = 20
 
-export class GmailService {
+/** The address of the signed-in mailbox. Gmail's own scopes allow it, so no extra scope is needed. */
+export async function fetchProfileEmail(auth: OAuth2Client): Promise<string> {
+  const res = await gmail({ version: 'v1', auth }).users.getProfile({ userId: 'me' })
+  const email = res.data.emailAddress
+  if (!email) throw new Error('Google no devolvió la dirección de correo de la cuenta.')
+  return email
+}
+
+/** Gmail for one connected account. */
+export class GmailService implements MailProvider {
   private readonly api: gmail_v1.Gmail
 
-  constructor(auth: OAuth2Client) {
+  constructor(
+    auth: OAuth2Client,
+    private readonly accountId: string
+  ) {
     this.api = gmail({ version: 'v1', auth })
   }
 
@@ -20,7 +33,7 @@ export class GmailService {
 
   async getMessage(id: string): Promise<ParsedEmail> {
     const res = await this.api.users.messages.get({ userId: 'me', id, format: 'full' })
-    return parseMessage(res.data)
+    return parseMessage(res.data, this.accountId)
   }
 
   /** Removes the message from the inbox and marks it read; it stays in All Mail. */

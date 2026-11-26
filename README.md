@@ -2,27 +2,28 @@
 
 Narsil is a small assistant that floats in the bottom-right corner of your Windows desktop. It:
 
-- watches your Gmail inbox for unread mail from the last two days (skipping the Promotions and Social tabs),
+- connects any number of Google accounts (Gmail and Google Calendar) and Microsoft accounts (Outlook.com, Hotmail and Microsoft 365), and shows them as one inbox and one meetings list,
+- watches each inbox for unread mail from the last two days (skipping Gmail's Promotions and Social tabs),
 - uses Claude to summarize each email, recommend **reply**, **save**, **archive** or **delete**, and draft up to three replies you can edit before sending,
-- reads your Google Calendar and reminds you **15 minutes** and again **5 minutes** before each meeting, with a Windows notification and a banner that has a "Unirse a la llamada" (join call) button. The interface is in Spanish.
+- reads each account's calendar and reminds you **15 minutes** and again **5 minutes** before each meeting, with a Windows notification and a banner that has a "Unirse a la llamada" (join call) button. The interface is in Spanish.
 
-Nothing is sent, archived or deleted without your click.
+Nothing is sent, archived or deleted without your click. With more than one account connected, each email and meeting shows the address of the account it belongs to, and a reply always goes out from the account that received the email.
 
-| Button | What it does in Gmail |
-| --- | --- |
-| Guardar (save) | Stars the email and marks it read. It stays in the inbox. |
-| Archivar (archive) | Removes it from the inbox and marks it read. It stays in All Mail. |
-| Eliminar (delete) | Moves it to Trash, where Gmail keeps it for 30 days. |
-| Enviar respuesta (send reply) | Sends your reply in the same thread and marks the email read. |
+| Button | Gmail | Outlook |
+| --- | --- | --- |
+| Guardar (save) | Stars the email and marks it read. It stays in the inbox. | Flags the email and marks it read. It stays in the inbox. |
+| Archivar (archive) | Removes it from the inbox and marks it read. It stays in All Mail. | Moves it to the Archive folder and marks it read. |
+| Eliminar (delete) | Moves it to Trash, where Gmail keeps it for 30 days. | Moves it to Deleted Items. |
+| Enviar respuesta (send reply) | Sends your reply in the same thread and marks the email read. | Sends your reply in the same conversation and marks the email read. |
 
 ## Requirements
 
 - Windows 10 or 11
 - Node.js 20 or later
-- A Google account (Gmail and Google Calendar)
+- At least one Google account (Gmail and Google Calendar) or Microsoft account (Outlook.com, Hotmail or Microsoft 365)
 - An Anthropic API key from <https://console.anthropic.com/>
 
-## 1. Create a Google OAuth client (one time)
+## 1. Create a Google OAuth client (one time, for Google accounts)
 
 Narsil talks to Gmail and Calendar with your own Google Cloud project, so your data never passes through a third-party server.
 
@@ -37,7 +38,27 @@ Keep that file private. Narsil asks for these permissions:
 - `gmail.send`: send the replies you approve
 - `calendar.readonly`: read your events
 
-While the consent screen is in "Testing" mode, Google expires the sign-in after 7 days and you will need to click **Conectar Google** again. Setting the publishing status to **In production** removes that limit. Because Gmail scopes are restricted, Google then shows an "unverified app" warning at sign-in, which you can accept for your own account.
+One OAuth client serves every Google account you add. While the consent screen is in "Testing" mode, add each account as a test user. Google expires the sign-in after 7 days, so you then need to remove the account under **Cuentas** (accounts) and add it again. Setting the publishing status to **In production** removes that limit. Because Gmail scopes are restricted, Google then shows an "unverified app" warning at sign-in, which you can accept for your own account.
+
+## Register a Microsoft app (one time)
+
+Narsil signs in to Outlook.com, Hotmail and Microsoft 365 accounts with your own app registration.
+
+1. Open the [Azure portal](https://portal.azure.com) and go to **Microsoft Entra ID → App registrations → New registration**.
+2. Enter a name, for example `Narsil`.
+3. Under **Supported account types**, choose **Accounts in any organizational directory and personal Microsoft accounts**.
+4. Under **Redirect URI**, choose the platform **Mobile and desktop applications** and enter `http://localhost`.
+5. Select **Register**.
+6. On the app's **Overview** page, copy the **Application (client) ID** (a GUID).
+7. Under **API permissions → Add a permission → Microsoft Graph → Delegated permissions**, add:
+   - `Mail.ReadWrite`
+   - `Mail.Send`
+   - `Calendars.Read`
+   - `User.Read`
+   - `offline_access`
+8. In Narsil, paste the Application (client) ID in **Ajustes**, then add your Microsoft accounts.
+
+Narsil uses no client secret. Each person grants these permissions when they sign in. A work or school account may need its administrator to approve the app.
 
 ## 2. Run Narsil
 
@@ -52,9 +73,12 @@ The second command downloads the Electron runtime. Recent npm versions skip that
 
 Narsil appears as a steel shard above the taskbar. Click it to open the panel, then go to **Ajustes** (settings):
 
-1. **Elegir archivo de cliente**: pick the JSON you downloaded.
-2. **Conectar Google**: your browser opens. Sign in and allow access.
-3. **Guardar clave**: paste your Anthropic API key. If `ANTHROPIC_API_KEY` is set in your environment, Narsil uses that instead.
+1. **Elegir archivo de cliente** (choose client file): for Google accounts, pick the JSON you downloaded.
+2. **Guardar ID** (save ID): for Microsoft accounts, paste the Application (client) ID of your Microsoft app.
+3. **Agregar cuenta de Google** / **Agregar cuenta de Microsoft** (add Google / Microsoft account): your browser opens. Sign in and allow access. Repeat for every account you want. Each button stays disabled until its provider is set up in step 1 or 2. **Quitar** (remove) next to an account under **Cuentas** (accounts) signs it out and drops its emails and meetings.
+4. **Guardar clave** (save key): paste your Anthropic API key. If `ANTHROPIC_API_KEY` is set in your environment, Narsil uses that instead.
+
+If you used an earlier version with one Google account, Narsil moves it to the new account list on first start, so you do not need to sign in again.
 
 Secrets are encrypted with Windows DPAPI (Electron `safeStorage`) under `%APPDATA%\narsil-proxy\secrets`.
 
@@ -76,9 +100,9 @@ The **Reglas** (rules) tab holds rules you define, such as "sender contains `sho
 - **Actividad reciente** (recent activity) lists the last 50 actions rules took, including failures. A failed action leaves the email in the list.
 - Rules only run while Narsil is open. They are stored as plain JSON in `%APPDATA%\narsil-proxy\rules.json`.
 
-Rules never delete permanently: "Eliminar" moves the email to Trash, where Gmail keeps it for 30 days.
+Rules apply to the mail of every connected account. They never delete permanently: "Eliminar" moves the email to Trash in Gmail, where it stays for 30 days, or to Deleted Items in Outlook.
 
-Narsil checks mail every minute and the calendar every 5 minutes. Reminders cover timed events on your primary calendar in the next 24 hours. All-day, cancelled and declined events are skipped. If Narsil starts less than 5 minutes before a meeting, you get only the 5-minute reminder.
+Narsil checks mail every minute and the calendars every 5 minutes. Each account is checked on its own, so a problem with one account shows an error that starts with its address while the others keep working. Reminders cover timed events on each account's main calendar in the next 24 hours. All-day, cancelled and declined events are skipped. If Narsil starts less than 5 minutes before a meeting, you get only the 5-minute reminder.
 
 ## Claude usage and privacy
 
@@ -113,10 +137,12 @@ src/
   shared/types.ts          Types and IPC channel names shared by every process
   main/
     domain/                Pure logic with unit tests: reminders, email parsing, reply MIME, triage prompt
-    adapters/              Gmail, Calendar, Google OAuth (loopback + PKCE), Claude, encrypted store
-    app/narsilService.ts   Polling, triage queue and reminder scheduling
+    adapters/              Google (OAuth loopback + PKCE, Gmail, Calendar), Microsoft (Graph), Claude, encrypted store
+    app/ports.ts           The provider port every account type implements
+    app/accounts.ts        The account list and the legacy Google account migration
+    app/narsilService.ts   Polling every account, triage queue, rules and reminder scheduling
     index.ts               Window, tray, notifications and validated IPC handlers
   preload/index.ts         The narrow `window.narsil` bridge
   renderer/                React UI
-tests/                     Vitest unit tests for the domain layer
+tests/                     Vitest unit tests for the domain layer, providers and service
 ```

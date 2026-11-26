@@ -66,7 +66,8 @@ export function htmlToText(html: string): string {
     .trim()
 }
 
-export function parseMessage(message: GmailMessageLike): ParsedEmail {
+/** Maps a Gmail message to a ParsedEmail that belongs to `accountId`. */
+export function parseMessage(message: GmailMessageLike, accountId: string): ParsedEmail {
   const payload = message.payload
   const from = header(payload, 'From') ?? '(Remitente desconocido)'
   const internal = Number(message.internalDate)
@@ -81,6 +82,7 @@ export function parseMessage(message: GmailMessageLike): ParsedEmail {
   const parsed: ParsedEmail = {
     summary: {
       id: message.id ?? '',
+      accountId,
       threadId: message.threadId ?? '',
       from,
       subject: header(payload, 'Subject')?.trim() || '(Sin asunto)',

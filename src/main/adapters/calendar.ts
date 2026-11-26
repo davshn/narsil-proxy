@@ -2,13 +2,18 @@ import { calendar, type calendar_v3 } from '@googleapis/calendar'
 import type { OAuth2Client } from 'google-auth-library'
 import type { Meeting } from '@shared/types'
 import { toMeeting } from '../domain/reminders'
+import type { CalendarProvider } from '../app/ports'
 
 const LOOKAHEAD_MS = 24 * 60 * 60_000
 
-export class CalendarService {
+/** Google Calendar for one connected account. */
+export class CalendarService implements CalendarProvider {
   private readonly api: calendar_v3.Calendar
 
-  constructor(auth: OAuth2Client) {
+  constructor(
+    auth: OAuth2Client,
+    private readonly accountId: string
+  ) {
     this.api = calendar({ version: 'v3', auth })
   }
 
@@ -23,7 +28,7 @@ export class CalendarService {
       maxResults: 50
     })
     return (res.data.items ?? []).flatMap((event) => {
-      const meeting = toMeeting(event)
+      const meeting = toMeeting(event, this.accountId)
       return meeting ? [meeting] : []
     })
   }

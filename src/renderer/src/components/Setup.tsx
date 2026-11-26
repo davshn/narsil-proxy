@@ -1,30 +1,54 @@
 import { useState } from 'react'
-import type { ActionResult, AppStatus } from '@shared/types'
+import type { ActionResult, AppStatus, ProviderKind } from '@shared/types'
 
 interface SetupProps {
   status: AppStatus
 }
 
+const PROVIDER_NAME: Record<ProviderKind, string> = { google: 'Google', microsoft: 'Microsoft' }
+
 export function Setup({ status }: SetupProps): React.JSX.Element {
   const [key, setKey] = useState('')
+  const [clientId, setClientId] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
-  async function run(label: string, fn: () => Promise<ActionResult>): Promise<void> {
+  async function run(label: string, fn: () => Promise<ActionResult>): Promise<boolean> {
     setBusy(label)
     setMessage(null)
     const result = await fn()
     setBusy(null)
     if (!result.ok) setMessage(result.error ?? 'Algo salió mal.')
+    return result.ok
+  }
+
+  function addButton(provider: ProviderKind, configured: boolean): React.JSX.Element {
+    const label = `add-${provider}`
+    return (
+      <button
+        type="button"
+        className="btn btn--primary"
+        disabled={busy !== null || !configured}
+        title={configured ? undefined : `Primero completa el paso de ${PROVIDER_NAME[provider]}.`}
+        onClick={() => void run(label, () => window.narsil.addAccount(provider))}
+      >
+        {busy === label ? 'Esperando a tu navegador…' : `Agregar cuenta de ${PROVIDER_NAME[provider]}`}
+      </button>
+    )
   }
 
   return (
     <section className="setup" aria-label="Ajustes">
-      <p className="setup__intro">Narsil necesita tres cosas para poder revisar tu correo y tu calendario.</p>
+      <p className="setup__intro">
+        Configura Google, Microsoft o ambos, agrega tus cuentas y guarda tu API key de Anthropic.
+      </p>
       <ol className="setup__steps">
         <li className={status.hasGoogleClient ? 'step step--done' : 'step'}>
           <h3>Archivo de cliente de Google</h3>
-          <p>El JSON del cliente OAuth tipo “App de escritorio” de tu proyecto de Google Cloud. El README explica cómo obtenerlo.</p>
+          <p>
+            Para cuentas de Gmail: el JSON del cliente OAuth tipo “App de escritorio” de tu proyecto de Google Cloud. El
+            README explica cómo obtenerlo.
+          </p>
           <button
             type="button"
             className="btn btn--primary"
@@ -34,28 +58,65 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
             {status.hasGoogleClient ? 'Reemplazar archivo de cliente' : 'Elegir archivo de cliente'}
           </button>
         </li>
-        <li className={status.googleConnected ? 'step step--done' : 'step'}>
-          <h3>Cuenta de Google</h3>
-          <p>Abre tu navegador para que autorices a Narsil a leer Gmail, actuar sobre tus correos y leer tu calendario.</p>
-          {status.googleConnected ? (
-            <button
-              type="button"
-              className="btn btn--ghost"
-              disabled={busy !== null}
-              onClick={() => void run('disconnect', () => window.narsil.disconnectGoogle())}
-            >
-              Desconectar Google
+        <li className={status.hasMicrosoftClient ? 'step step--done' : 'step'}>
+          <h3>ID de aplicación de Microsoft</h3>
+          <p>
+            Para cuentas de Outlook, Hotmail o Microsoft 365: el ID de aplicación (cliente) de tu registro en Microsoft
+            Entra. El README explica cómo obtenerlo.
+          </p>
+          <form
+            className="setup__key"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void run('client-id', () => window.narsil.setMicrosoftClientId(clientId.trim())).then((ok) => {
+                if (ok) setClientId('')
+              })
+            }}
+          >
+            <input
+              type="text"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder={status.hasMicrosoftClient ? 'ID guardado. Pega uno nuevo para reemplazarlo' : '00000000-0000-0000-0000-000000000000'}
+              aria-label="ID de aplicación (cliente) de Microsoft"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button type="submit" className="btn btn--primary" disabled={busy !== null || !clientId.trim()}>
+              Guardar ID
             </button>
+          </form>
+        </li>
+        <li className={status.accounts.length > 0 ? 'step step--done' : 'step'}>
+          <h3>Cuentas</h3>
+          <p>Tu navegador se abre para que autorices a Narsil a leer tu correo, actuar sobre él y leer tu calendario.</p>
+          {status.accounts.length === 0 ? (
+            <p className="accounts__empty">Aún no has agregado ninguna cuenta.</p>
           ) : (
-            <button
-              type="button"
-              className="btn btn--primary"
-              disabled={busy !== null || !status.hasGoogleClient}
-              onClick={() => void run('connect', () => window.narsil.connectGoogle())}
-            >
-              {busy === 'connect' ? 'Esperando a tu navegador…' : 'Conectar Google'}
-            </button>
+            <ul className="accounts" aria-label="Cuentas conectadas">
+              {status.accounts.map((account) => (
+                <li key={account.id} className="account">
+                  <span className="account__provider">{PROVIDER_NAME[account.provider]}</span>
+                  <span className="account__email" title={account.email}>
+                    {account.email}
+                  </span>
+                  <button
+                    type="button"
+                    className="link-btn"
+                    disabled={busy !== null}
+                    aria-label={`Quitar ${account.email}`}
+                    onClick={() => void run(`remove-${account.id}`, () => window.narsil.removeAccount(account.id))}
+                  >
+                    {busy === `remove-${account.id}` ? 'Quitando…' : 'Quitar'}
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
+          <div className="setup__actions">
+            {addButton('google', status.hasGoogleClient)}
+            {addButton('microsoft', status.hasMicrosoftClient)}
+          </div>
         </li>
         <li className={status.hasAnthropicKey ? 'step step--done' : 'step'}>
           <h3>API key de Anthropic</h3>

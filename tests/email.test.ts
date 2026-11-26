@@ -26,9 +26,10 @@ const baseMessage = {
 
 describe('parseMessage', () => {
   it('extracts the summary fields with case-insensitive headers', () => {
-    const parsed = parseMessage(baseMessage)
+    const parsed = parseMessage(baseMessage, 'acc-1')
     expect(parsed.summary).toEqual({
       id: 'm1',
+      accountId: 'acc-1',
       threadId: 't1',
       from: 'Ana <ana@example.com>',
       subject: 'Reunión',
@@ -41,7 +42,7 @@ describe('parseMessage', () => {
   })
 
   it('prefers the text/plain part and decodes UTF-8', () => {
-    expect(parseMessage(baseMessage).bodyText).toBe('Hola, ¿nos vemos mañana?')
+    expect(parseMessage(baseMessage, 'acc-1').bodyText).toBe('Hola, ¿nos vemos mañana?')
   })
 
   it('falls back to stripped HTML when there is no text part', () => {
@@ -54,11 +55,11 @@ describe('parseMessage', () => {
         body: { data: b64url('<style>p{}</style><p>Hola&nbsp;<b>Ana</b> &amp; equipo</p>') }
       }
     }
-    expect(parseMessage(htmlOnly).bodyText).toBe('Hola Ana & equipo')
+    expect(parseMessage(htmlOnly, 'acc-1').bodyText).toBe('Hola Ana & equipo')
   })
 
   it('replies to Reply-To when present, otherwise to From', () => {
-    expect(parseMessage(baseMessage).replyTo).toBe('Ana <ana@example.com>')
+    expect(parseMessage(baseMessage, 'acc-1').replyTo).toBe('Ana <ana@example.com>')
     const withReplyTo = {
       ...baseMessage,
       payload: {
@@ -66,12 +67,12 @@ describe('parseMessage', () => {
         headers: [...baseMessage.payload.headers, { name: 'Reply-To', value: 'team@example.com' }]
       }
     }
-    expect(parseMessage(withReplyTo).replyTo).toBe('team@example.com')
+    expect(parseMessage(withReplyTo, 'acc-1').replyTo).toBe('team@example.com')
   })
 
   it('uses placeholders when subject and sender are missing', () => {
     const bare = { id: 'm2', threadId: 't2', payload: { headers: [] } }
-    const parsed = parseMessage(bare)
+    const parsed = parseMessage(bare, 'acc-1')
     expect(parsed.summary.subject).toBe('(Sin asunto)')
     expect(parsed.summary.from).toBe('(Remitente desconocido)')
     expect(parsed.bodyText).toBe('')
@@ -137,7 +138,7 @@ describe('parseMessage reply target', () => {
         headers: [...baseMessage.payload.headers, { name: 'Reply-To', value: 'other@example.net' }]
       }
     }
-    expect(parseMessage(withReplyTo).summary.replyTo).toBe('other@example.net')
-    expect(parseMessage(baseMessage).summary.replyTo).toBe('Ana <ana@example.com>')
+    expect(parseMessage(withReplyTo, 'acc-1').summary.replyTo).toBe('other@example.net')
+    expect(parseMessage(baseMessage, 'acc-1').summary.replyTo).toBe('Ana <ana@example.com>')
   })
 })

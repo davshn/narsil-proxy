@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import type {
+  Account,
   AppStatus,
   EmailAction,
   InboxItem,
   Meeting,
+  ProviderKind,
   ReminderAlert,
   Rule,
   RuleAction,
@@ -14,11 +16,9 @@ import { findMatchingRule, normalizeRule } from '@shared/rules'
 import type { ParsedEmail } from '../domain/email'
 import type { RulesRepository } from '../adapters/rulesStore'
 import { dueReminders } from '../domain/reminders'
-import type { SecureStore } from '../adapters/secureStore'
-import { GoogleAuth } from '../adapters/googleAuth'
-import { GmailService } from '../adapters/gmail'
-import { CalendarService } from '../adapters/calendar'
 import { ClaudeTriage, describeClaudeError } from '../adapters/claude'
+import type { AccountConnection, MailProvider, ProviderAuth } from './ports'
+import type { AccountRegistry, SecretStore } from './accounts'
 
 const INBOX_POLL_MS = 60_000
 const CALENDAR_POLL_MS = 5 * 60_000
@@ -34,47 +34,104 @@ export interface NarsilEvents {
   activityChanged(activity: RuleActivity[]): void
 }
 
+/** One provider per kind, each with the extra call that stores its app registration. */
+export interface Providers {
+  google: ProviderAuth & { saveClientConfig(json: string): void }
+  microsoft: ProviderAuth & { saveClientId(clientId: string): void }
+}
+
+export interface NarsilDeps {
+  store: SecretStore
+  events: NarsilEvents
+  rules: RulesRepository
+  accounts: AccountRegistry
+  providers: Providers
+  /** Runs once at startup before accounts connect, e.g. the legacy Google token migration. */
+  migrate?: () => Promise<void>
+}
+
 /** A failed triage is retried on later polls up to this many attempts in total. */
 const MAX_TRIAGE_ATTEMPTS = 3
 
+const NOT_CONFIGURED: Record<ProviderKind, string> = {
+  google: 'Primero carga tu archivo de cliente OAuth de Google.',
+  microsoft: 'Primero guarda el ID de aplicación (cliente) de Microsoft.'
+}
+
 interface Tracked {
+  key: string
+  accountId: string
   parsed: ParsedEmail
   item: InboxItem
   attempts: number
   triaging: boolean
 }
 
-/** Application core: polls Gmail and Calendar, triages mail with Claude and fires reminders. */
+interface Connected {
+  account: Account
+  connection: AccountConnection
+}
+
+const itemKey = (accountId: string, messageId: string): string => `${accountId}:${messageId}`
+
+const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
+/**
+ * Application core: polls every connected account's mail and calendar, triages mail
+ * with Claude, applies user rules and fires meeting reminders.
+ */
 export class NarsilService {
-  readonly auth: GoogleAuth
-  private gmail: GmailService | null = null
-  private calendar: CalendarService | null = null
+  private readonly store: SecretStore
+  private readonly events: NarsilEvents
+  private readonly rulesRepo: RulesRepository
+  private readonly accounts: AccountRegistry
+  private readonly providers: Providers
+  private readonly migrate: (() => Promise<void>) | undefined
+  private readonly connections = new Map<string, Connected>()
+  /** Keyed by `${accountId}:${messageId}`. */
   private readonly inbox = new Map<string, Tracked>()
+  private readonly meetingsByAccount = new Map<string, Meeting[]>()
   private meetings: Meeting[] = []
   private readonly firedReminders = new Set<string>()
   private readonly timers: NodeJS.Timeout[] = []
-  private lastError: string | undefined
-  private inboxBusy = false
+  /** Current problems, keyed by source (`${accountId}:mail`, `${accountId}:calendar`, `startup`). */
+  private readonly errors = new Map<string, string>()
+  private readonly inboxBusy = new Set<string>()
   private ruleList: Rule[]
   private activity: RuleActivity[] = []
 
-  constructor(
-    private readonly store: SecureStore,
-    private readonly events: NarsilEvents,
-    private readonly rulesRepo: RulesRepository
-  ) {
-    this.auth = new GoogleAuth(store)
-    this.ruleList = rulesRepo.load()
+  constructor(deps: NarsilDeps) {
+    this.store = deps.store
+    this.events = deps.events
+    this.rulesRepo = deps.rules
+    this.accounts = deps.accounts
+    this.providers = deps.providers
+    this.migrate = deps.migrate
+    this.ruleList = this.rulesRepo.load()
   }
 
   start(): void {
-    this.connectServices()
     this.timers.push(
       setInterval(() => void this.pollInbox(), INBOX_POLL_MS),
       setInterval(() => void this.pollCalendar(), CALENDAR_POLL_MS),
       setInterval(() => this.checkReminders(), REMINDER_TICK_MS)
     )
-    void this.refresh()
+    void this.init()
+      .then(() => this.refresh())
+      .catch((error: unknown) => this.setError('startup', message(error)))
+  }
+
+  /** Runs the startup migration, then connects every stored account. Called by start(). */
+  async init(): Promise<void> {
+    if (this.migrate) {
+      try {
+        await this.migrate()
+      } catch (error) {
+        this.errors.set('startup', `No se pudo migrar tu cuenta de Google anterior (se reintentará al reiniciar): ${message(error)}`)
+      }
+    }
+    this.syncConnections()
+    this.emitStatus()
   }
 
   stop(): void {
@@ -83,12 +140,21 @@ export class NarsilService {
   }
 
   status(): AppStatus {
+    let accounts: Account[] = []
+    let damaged: string | undefined
+    try {
+      accounts = this.accounts.list()
+    } catch (error) {
+      damaged = message(error)
+    }
     const status: AppStatus = {
-      hasGoogleClient: this.auth.hasClientConfig(),
-      googleConnected: this.auth.isConnected(),
+      accounts,
+      hasGoogleClient: this.providers.google.isConfigured(),
+      hasMicrosoftClient: this.providers.microsoft.isConfigured(),
       hasAnthropicKey: this.anthropicKey() !== null
     }
-    if (this.lastError) status.lastError = this.lastError
+    const errors = [...(damaged ? [damaged] : []), ...this.errors.values()]
+    if (errors.length > 0) status.lastError = errors.join('\n')
     return status
   }
 
@@ -128,26 +194,45 @@ export class NarsilService {
   }
 
   importGoogleClient(json: string): void {
-    this.auth.saveClientConfig(json)
+    this.providers.google.saveClientConfig(json)
+    this.reconnect('google')
     this.emitStatus()
   }
 
-  async connectGoogle(): Promise<void> {
-    await this.auth.connect()
-    this.connectServices()
-    this.lastError = undefined
+  setMicrosoftClientId(clientId: string): void {
+    this.providers.microsoft.saveClientId(clientId)
+    this.reconnect('microsoft')
+    this.emitStatus()
+  }
+
+  /** Signs in a new account in the browser, rejecting one whose email is already connected. */
+  async addAccount(kind: ProviderKind): Promise<void> {
+    const provider = this.providers[kind]
+    if (!provider.isConfigured()) throw new Error(NOT_CONFIGURED[kind])
+    const added = await provider.addAccount()
+    const email = added.email.trim()
+    const duplicate = this.accounts
+      .list()
+      .some((a) => a.provider === kind && a.email.toLowerCase() === email.toLowerCase())
+    if (duplicate) {
+      await provider.removeAccount(added.accountId)
+      throw new Error(`La cuenta ${email} ya está conectada.`)
+    }
+    this.accounts.add({ id: added.accountId, provider: kind, email })
+    this.syncConnections()
     this.emitStatus()
     await this.refresh()
   }
 
-  async disconnectGoogle(): Promise<void> {
-    await this.auth.disconnect()
-    this.gmail = null
-    this.calendar = null
-    this.inbox.clear()
-    this.meetings = []
-    this.events.inboxChanged([])
-    this.events.meetingsChanged([])
+  /** Forgets an account's credentials and drops its emails and meetings. */
+  async removeAccount(accountId: string): Promise<void> {
+    const account = this.accounts.list().find((a) => a.id === accountId)
+    if (!account) return
+    await this.providers[account.provider].removeAccount(accountId)
+    this.accounts.remove(accountId)
+    this.disconnect(accountId)
+    this.emitInbox()
+    this.events.meetingsChanged(this.meetings)
     this.emitStatus()
   }
 
@@ -165,32 +250,70 @@ export class NarsilService {
     this.emitStatus()
   }
 
-  async applyAction(emailId: string, action: Exclude<EmailAction, 'reply'>): Promise<void> {
-    const gmail = this.requireGmail()
-    if (!this.inbox.has(emailId)) throw new Error('Este correo ya no está en la lista.')
-    await this.perform(gmail, emailId, action)
-    this.removeFromInbox(emailId)
+  async applyAction(key: string, action: Exclude<EmailAction, 'reply'>): Promise<void> {
+    const { tracked, mail } = this.requireTracked(key)
+    await this.perform(mail, tracked.parsed.summary.id, action)
+    this.removeFromInbox(key)
   }
 
-  async sendReply(emailId: string, body: string): Promise<void> {
-    const gmail = this.requireGmail()
-    const tracked = this.inbox.get(emailId)
-    if (!tracked) throw new Error('Este correo ya no está en la lista.')
+  /** Replies from the account that received the email. */
+  async sendReply(key: string, body: string): Promise<void> {
+    const { tracked, mail } = this.requireTracked(key)
     if (!body.trim()) throw new Error('La respuesta está vacía.')
-    await gmail.reply(tracked.parsed, body)
-    this.removeFromInbox(emailId)
+    await mail.reply(tracked.parsed, body)
+    this.removeFromInbox(key)
   }
 
-  private connectServices(): void {
-    const client = this.auth.getAuthorizedClient()
-    this.gmail = client ? new GmailService(client) : null
-    this.calendar = client ? new CalendarService(client) : null
+  private requireTracked(key: string): { tracked: Tracked; mail: MailProvider } {
+    const tracked = this.inbox.get(key)
+    if (!tracked) throw new Error('Este correo ya no está en la lista.')
+    const connected = this.connections.get(tracked.accountId)
+    if (!connected) throw new Error('La cuenta de este correo ya no está conectada.')
+    return { tracked, mail: connected.connection.mail }
   }
 
-  private async perform(gmail: GmailService, emailId: string, action: RuleAction): Promise<void> {
-    if (action === 'archive') await gmail.archive(emailId)
-    else if (action === 'delete') await gmail.trash(emailId)
-    else await gmail.save(emailId)
+  /** Connects stored accounts that are not connected yet and drops removed ones. */
+  private syncConnections(): void {
+    const accounts = this.accounts.list()
+    const ids = new Set(accounts.map((a) => a.id))
+    for (const id of [...this.connections.keys()]) if (!ids.has(id)) this.disconnect(id)
+    for (const account of accounts) {
+      if (this.connections.has(account.id)) continue
+      const connection = this.providers[account.provider].connect(account.id)
+      if (connection) {
+        this.connections.set(account.id, { account, connection })
+        this.errors.delete(`${account.id}:connect`)
+      } else {
+        this.errors.set(`${account.id}:connect`, `${account.email}: faltan sus credenciales. Quita la cuenta y vuelve a agregarla.`)
+      }
+    }
+  }
+
+  /** Rebuilds the connections of one provider after its app registration changed. */
+  private reconnect(kind: ProviderKind): void {
+    for (const [id, connected] of [...this.connections]) {
+      if (connected.account.provider === kind) this.connections.delete(id)
+    }
+    this.syncConnections()
+  }
+
+  private disconnect(accountId: string): void {
+    this.connections.delete(accountId)
+    for (const [key, tracked] of [...this.inbox]) if (tracked.accountId === accountId) this.inbox.delete(key)
+    this.meetingsByAccount.delete(accountId)
+    this.mergeMeetings()
+    for (const source of [...this.errors.keys()]) if (source.startsWith(`${accountId}:`)) this.errors.delete(source)
+  }
+
+  /** True while `connected` is still the live connection for its account. */
+  private isLive(connected: Connected): boolean {
+    return this.connections.get(connected.account.id) === connected
+  }
+
+  private async perform(mail: MailProvider, messageId: string, action: RuleAction): Promise<void> {
+    if (action === 'archive') await mail.archive(messageId)
+    else if (action === 'delete') await mail.trash(messageId)
+    else await mail.save(messageId)
   }
 
   private setRules(rules: Rule[]): void {
@@ -200,7 +323,7 @@ export class NarsilService {
   }
 
   /** Runs the first matching rule on an email. Returns true when the email was handled. */
-  private async applyRules(gmail: GmailService, parsed: ParsedEmail): Promise<boolean> {
+  private async applyRules(mail: MailProvider, parsed: ParsedEmail): Promise<boolean> {
     const rule = findMatchingRule(this.ruleList, {
       from: parsed.summary.from,
       subject: parsed.summary.subject,
@@ -217,9 +340,9 @@ export class NarsilService {
     }
     let handled = true
     try {
-      await this.perform(gmail, parsed.summary.id, rule.action)
+      await this.perform(mail, parsed.summary.id, rule.action)
     } catch (error) {
-      entry.error = error instanceof Error ? error.message : String(error)
+      entry.error = message(error)
       handled = false
     }
     this.activity = [entry, ...this.activity].slice(0, MAX_ACTIVITY)
@@ -228,21 +351,16 @@ export class NarsilService {
   }
 
   private async applyRulesToInbox(): Promise<void> {
-    const gmail = this.gmail
-    if (!gmail) return
     let changed = false
     for (const tracked of [...this.inbox.values()]) {
-      if (await this.applyRules(gmail, tracked.parsed)) {
-        this.inbox.delete(tracked.item.email.id)
+      const connected = this.connections.get(tracked.accountId)
+      if (!connected) continue
+      if (await this.applyRules(connected.connection.mail, tracked.parsed)) {
+        this.inbox.delete(tracked.key)
         changed = true
       }
     }
     if (changed) this.emitInbox()
-  }
-
-  private requireGmail(): GmailService {
-    if (!this.gmail) throw new Error('Primero conecta tu cuenta de Google.')
-    return this.gmail
   }
 
   private anthropicKey(): string | null {
@@ -250,26 +368,43 @@ export class NarsilService {
   }
 
   private async pollInbox(): Promise<void> {
-    if (!this.gmail || this.inboxBusy) return
-    this.inboxBusy = true
+    // Each account polls on its own, so a failing or slow account never holds up the others.
+    await Promise.all([...this.connections.values()].map((c) => this.pollAccountInbox(c)))
+  }
+
+  private async pollAccountInbox(connected: Connected): Promise<void> {
+    const { account, connection } = connected
+    if (this.inboxBusy.has(account.id)) return
+    this.inboxBusy.add(account.id)
+    const source = `${account.id}:mail`
     try {
-      const ids = await this.gmail.listUnread()
-      const current = new Set(ids)
+      const ids = await connection.mail.listUnread()
+      if (!this.isLive(connected)) return
+      const current = new Set(ids.map((id) => itemKey(account.id, id)))
       let changed = false
-      for (const id of [...this.inbox.keys()]) {
-        if (!current.has(id)) {
-          this.inbox.delete(id)
+      for (const [key, tracked] of [...this.inbox]) {
+        if (tracked.accountId === account.id && !current.has(key)) {
+          this.inbox.delete(key)
           changed = true
         }
       }
       let unreadable = 0
       for (const id of ids) {
-        if (this.inbox.has(id)) continue
+        const key = itemKey(account.id, id)
+        if (this.inbox.has(key)) continue
         try {
-          const parsed = await this.gmail.getMessage(id)
+          const parsed = await connection.mail.getMessage(id)
+          if (!this.isLive(connected)) return
           // Rules run before triage, so handled emails never reach Claude.
-          if (await this.applyRules(this.gmail, parsed)) continue
-          this.inbox.set(id, { parsed, item: { email: parsed.summary, triage: null }, attempts: 0, triaging: false })
+          if (await this.applyRules(connection.mail, parsed)) continue
+          this.inbox.set(key, {
+            key,
+            accountId: account.id,
+            parsed,
+            item: { key, email: parsed.summary, triage: null },
+            attempts: 0,
+            triaging: false
+          })
           changed = true
         } catch {
           // One unreadable message must not block the rest; it is retried on the next poll.
@@ -278,14 +413,16 @@ export class NarsilService {
       }
       if (changed) this.emitInbox()
       for (const tracked of [...this.inbox.values()]) {
+        if (tracked.accountId !== account.id) continue
         if (!tracked.item.triage && tracked.attempts < MAX_TRIAGE_ATTEMPTS) await this.triage(tracked)
       }
-      if (unreadable > 0) this.setError(`Gmail: no se pudieron leer ${unreadable} correo(s); se reintentará en la próxima revisión.`)
-      else this.clearError()
+      if (unreadable > 0) {
+        this.setError(source, `${account.email}: no se pudieron leer ${unreadable} correo(s); se reintentará en la próxima revisión.`)
+      } else this.clearError(source)
     } catch (error) {
-      this.setError(`Gmail: ${error instanceof Error ? error.message : String(error)}`)
+      if (this.isLive(connected)) this.setError(source, `${account.email}: ${message(error)}`)
     } finally {
-      this.inboxBusy = false
+      this.inboxBusy.delete(account.id)
     }
   }
 
@@ -301,25 +438,37 @@ export class NarsilService {
     tracked.attempts++
     try {
       const triage = await new ClaudeTriage(key).triage(tracked.parsed)
-      tracked.item = { email: tracked.item.email, triage }
+      tracked.item = { key: tracked.key, email: tracked.item.email, triage }
     } catch (error) {
-      tracked.item = { email: tracked.item.email, triage: null, triageError: describeClaudeError(error) }
+      tracked.item = { key: tracked.key, email: tracked.item.email, triage: null, triageError: describeClaudeError(error) }
     } finally {
       tracked.triaging = false
     }
-    if (this.inbox.has(tracked.item.email.id)) this.emitInbox()
+    if (this.inbox.has(tracked.key)) this.emitInbox()
   }
 
   private async pollCalendar(): Promise<void> {
-    if (!this.calendar) return
-    try {
-      this.meetings = await this.calendar.upcoming()
-      this.events.meetingsChanged(this.meetings)
-      this.checkReminders()
-      this.clearError()
-    } catch (error) {
-      this.setError(`Calendario: ${error instanceof Error ? error.message : String(error)}`)
-    }
+    await Promise.all(
+      [...this.connections.values()].map(async (connected) => {
+        const source = `${connected.account.id}:calendar`
+        try {
+          const meetings = await connected.connection.calendar.upcoming()
+          if (!this.isLive(connected)) return
+          this.meetingsByAccount.set(connected.account.id, meetings)
+          this.clearError(source)
+        } catch (error) {
+          // Keep the last known meetings of this account so its reminders still fire.
+          if (this.isLive(connected)) this.setError(source, `${connected.account.email} (calendario): ${message(error)}`)
+        }
+      })
+    )
+    this.mergeMeetings()
+    this.events.meetingsChanged(this.meetings)
+    this.checkReminders()
+  }
+
+  private mergeMeetings(): void {
+    this.meetings = [...this.meetingsByAccount.values()].flat().sort((a, b) => a.start.localeCompare(b.start))
   }
 
   private checkReminders(): void {
@@ -329,8 +478,8 @@ export class NarsilService {
     }
   }
 
-  private removeFromInbox(id: string): void {
-    this.inbox.delete(id)
+  private removeFromInbox(key: string): void {
+    this.inbox.delete(key)
     this.emitInbox()
   }
 
@@ -342,14 +491,14 @@ export class NarsilService {
     this.events.statusChanged(this.status())
   }
 
-  private setError(message: string): void {
-    this.lastError = message
+  private setError(source: string, text: string): void {
+    if (this.errors.get(source) === text) return
+    this.errors.set(source, text)
     this.emitStatus()
   }
 
-  private clearError(): void {
-    if (this.lastError === undefined) return
-    this.lastError = undefined
+  private clearError(source: string): void {
+    if (!this.errors.delete(source)) return
     this.emitStatus()
   }
 }

@@ -20,8 +20,9 @@ export interface CalendarEventLike {
 /**
  * Maps a Calendar event to a Meeting, or null when it should not trigger reminders:
  * all-day events, cancelled events and events the user declined.
+ * The id is `${accountId}:${event.id}` so it stays unique across accounts.
  */
-export function toMeeting(event: CalendarEventLike): Meeting | null {
+export function toMeeting(event: CalendarEventLike, accountId: string): Meeting | null {
   const startRaw = event.start?.dateTime
   const endRaw = event.end?.dateTime
   if (!event.id || !startRaw || !endRaw) return null
@@ -30,7 +31,8 @@ export function toMeeting(event: CalendarEventLike): Meeting | null {
   if (self?.responseStatus === 'declined') return null
 
   const meeting: Meeting = {
-    id: event.id,
+    id: `${accountId}:${event.id}`,
+    accountId,
     title: event.summary?.trim() || '(Reunión sin título)',
     start: new Date(startRaw).toISOString(),
     end: new Date(endRaw).toISOString()

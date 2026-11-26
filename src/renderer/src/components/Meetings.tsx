@@ -12,7 +12,13 @@ function dayLabel(iso: string): string {
   return date.toLocaleDateString([], { weekday: 'long' })
 }
 
-export function Meetings({ meetings }: { meetings: Meeting[] }): React.JSX.Element {
+interface MeetingsProps {
+  meetings: Meeting[]
+  /** The calendar's account email, or undefined when only one account is connected. */
+  accountLabel(accountId: string): string | undefined
+}
+
+export function Meetings({ meetings, accountLabel }: MeetingsProps): React.JSX.Element {
   if (meetings.length === 0) {
     return <p className="empty">No tienes reuniones en las próximas 24 horas. Narsil te avisará 15 y 5 minutos antes de la siguiente.</p>
   }
@@ -26,6 +32,7 @@ export function Meetings({ meetings }: { meetings: Meeting[] }): React.JSX.Eleme
           </div>
           <div className="meeting__what">
             <span className="meeting__title">{m.title}</span>
+            {accountLabel(m.accountId) && <span className="account-tag">{accountLabel(m.accountId)}</span>}
             {m.location && <span className="meeting__place">{m.location}</span>}
             {m.link && (
               <a className="meeting__link" href={m.link} target="_blank" rel="noreferrer">

@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.14.0",
+    "@azure/msal-node": "^7.2.3",
     "@googleapis/calendar": "^20.2.0",
     "@googleapis/gmail": "^22.1.0",
     "google-auth-library": "^11.3.4",

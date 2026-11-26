@@ -2,8 +2,19 @@
 
 export type EmailAction = 'reply' | 'archive' | 'delete' | 'save'
 
-export interface EmailSummary {
+export type ProviderKind = 'google' | 'microsoft'
+
+/** A connected mailbox. `id` is an opaque randomUUID assigned when the account is added. */
+export interface Account {
   id: string
+  provider: ProviderKind
+  email: string
+}
+
+export interface EmailSummary {
+  /** The provider's message id; unique only within its account. */
+  id: string
+  accountId: string
   threadId: string
   from: string
   /** Where a reply goes: the Reply-To header when present, otherwise From. */
@@ -65,13 +76,17 @@ export interface RuleActivity {
 }
 
 export interface InboxItem {
+  /** Unique across accounts: `${accountId}:${email.id}`. IPC actions address emails by this key. */
+  key: string
   email: EmailSummary
   triage: Triage | null
   triageError?: string
 }
 
 export interface Meeting {
+  /** Unique across accounts: `${accountId}:${providerEventId}`. */
   id: string
+  accountId: string
   title: string
   /** ISO 8601 timestamp. */
   start: string
@@ -91,8 +106,9 @@ export interface ReminderAlert {
 }
 
 export interface AppStatus {
+  accounts: Account[]
   hasGoogleClient: boolean
-  googleConnected: boolean
+  hasMicrosoftClient: boolean
   hasAnthropicKey: boolean
   lastError?: string
 }
@@ -105,14 +121,15 @@ export interface ActionResult {
 export interface NarsilApi {
   getStatus(): Promise<AppStatus>
   importGoogleClient(): Promise<ActionResult>
-  connectGoogle(): Promise<ActionResult>
-  disconnectGoogle(): Promise<ActionResult>
+  setMicrosoftClientId(clientId: string): Promise<ActionResult>
+  addAccount(provider: ProviderKind): Promise<ActionResult>
+  removeAccount(accountId: string): Promise<ActionResult>
   setAnthropicKey(key: string): Promise<ActionResult>
   getInbox(): Promise<InboxItem[]>
   getMeetings(): Promise<Meeting[]>
   refresh(): Promise<ActionResult>
-  applyAction(emailId: string, action: Exclude<EmailAction, 'reply'>): Promise<ActionResult>
-  sendReply(emailId: string, body: string): Promise<ActionResult>
+  applyAction(key: string, action: Exclude<EmailAction, 'reply'>): Promise<ActionResult>
+  sendReply(key: string, body: string): Promise<ActionResult>
   setExpanded(expanded: boolean): Promise<void>
   getRules(): Promise<Rule[]>
   saveRule(input: RuleInput): Promise<ActionResult>
@@ -129,8 +146,9 @@ export interface NarsilApi {
 export const IPC = {
   getStatus: 'narsil:get-status',
   importGoogleClient: 'narsil:import-google-client',
-  connectGoogle: 'narsil:connect-google',
-  disconnectGoogle: 'narsil:disconnect-google',
+  setMicrosoftClientId: 'narsil:set-microsoft-client-id',
+  addAccount: 'narsil:add-account',
+  removeAccount: 'narsil:remove-account',
   setAnthropicKey: 'narsil:set-anthropic-key',
   getInbox: 'narsil:get-inbox',
   getMeetings: 'narsil:get-meetings',

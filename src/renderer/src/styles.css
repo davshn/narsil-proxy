@@ -194,6 +194,7 @@ textarea {
   background: #fbe9e8;
   color: var(--danger);
   font-size: 13px;
+  white-space: pre-line;
 }
 
 .panel__foot {
@@ -502,6 +503,63 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--frost);
+}
+
+.setup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.accounts {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.account {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.account__provider {
+  flex: none;
+  font-weight: 600;
+  color: var(--steel-deep);
+}
+
+.account__email {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accounts__empty {
+  font-style: italic;
+}
+
+/* The receiving account, shown on emails and meetings when several are connected. */
+.account-tag {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--frost);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 @media (prefers-reduced-motion: reduce) {

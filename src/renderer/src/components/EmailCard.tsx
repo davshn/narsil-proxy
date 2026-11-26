@@ -18,8 +18,10 @@ const ACTION_HINT: Record<QuickAction, string> = {
 
 interface EmailCardProps {
   item: InboxItem
-  onAction(id: string, action: QuickAction): Promise<string | null>
-  onReply(id: string, body: string): Promise<string | null>
+  /** The receiving account's email, shown only when several accounts are connected. */
+  accountLabel?: string | undefined
+  onAction(key: string, action: QuickAction): Promise<string | null>
+  onReply(key: string, body: string): Promise<string | null>
   onCreateRule(from: string): void
 }
 
@@ -32,7 +34,7 @@ function senderName(from: string): string {
   return match?.[1] ?? from
 }
 
-export function EmailCard({ item, onAction, onReply, onCreateRule }: EmailCardProps): React.JSX.Element {
+export function EmailCard({ item, accountLabel, onAction, onReply, onCreateRule }: EmailCardProps): React.JSX.Element {
   const { email, triage } = item
   const [draft, setDraft] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -61,6 +63,11 @@ export function EmailCard({ item, onAction, onReply, onCreateRule }: EmailCardPr
           {new Date(email.receivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </time>
       </header>
+      {accountLabel && (
+        <span className="account-tag" title={`Recibido en ${accountLabel}`}>
+          {accountLabel}
+        </span>
+      )}
       <h3 className="mail__subject">{email.subject}</h3>
 
       {triage ? (
@@ -114,7 +121,7 @@ export function EmailCard({ item, onAction, onReply, onCreateRule }: EmailCardPr
               type="button"
               className="btn btn--primary"
               disabled={busy || !draft.trim()}
-              onClick={() => void act(() => onReply(email.id, draft))}
+              onClick={() => void act(() => onReply(item.key, draft))}
             >
               {busy ? 'Enviando…' : 'Enviar respuesta'}
             </button>
@@ -139,7 +146,7 @@ export function EmailCard({ item, onAction, onReply, onCreateRule }: EmailCardPr
               className={`btn btn--${action}${recommended === action ? ' btn--lead' : ''}`}
               title={ACTION_HINT[action]}
               disabled={busy}
-              onClick={() => void act(() => onAction(email.id, action))}
+              onClick={() => void act(() => onAction(item.key, action))}
             >
               {ACTION_LABEL[action]}
             </button>

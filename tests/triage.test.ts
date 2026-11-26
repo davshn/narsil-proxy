@@ -5,6 +5,7 @@ import type { ParsedEmail } from '../src/main/domain/email'
 const email: ParsedEmail = {
   summary: {
     id: 'm1',
+    accountId: 'acc-1',
     threadId: 't1',
     from: 'Ana <ana@example.com>',
     subject: 'Reunión',

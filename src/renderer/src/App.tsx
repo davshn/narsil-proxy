@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AppStatus, InboxItem, Meeting, ReminderAlert, Rule, RuleActivity, RuleInput } from '@shared/types'
 import { ruleDraftFromEmail } from '@shared/rules'
 import { Shard } from './components/Shard'
@@ -9,10 +9,11 @@ import { Rules } from './components/Rules'
 
 type Tab = 'mail' | 'meetings' | 'rules' | 'setup'
 
-const EMPTY_STATUS: AppStatus = { hasGoogleClient: false, googleConnected: false, hasAnthropicKey: false }
+const EMPTY_STATUS: AppStatus = { accounts: [], hasGoogleClient: false, hasMicrosoftClient: false, hasAnthropicKey: false }
 
+/** Ready once at least one mailbox is connected and Claude can triage. */
 function isReady(s: AppStatus): boolean {
-  return s.googleConnected && s.hasAnthropicKey
+  return s.accounts.length > 0 && s.hasAnthropicKey
 }
 
 export function App(): React.JSX.Element {
@@ -57,13 +58,13 @@ export function App(): React.JSX.Element {
     return () => offs.forEach((off) => off())
   }, [setExpanded])
 
-  const onAction = useCallback(async (id: string, action: 'archive' | 'delete' | 'save') => {
-    const result = await window.narsil.applyAction(id, action)
+  const onAction = useCallback(async (key: string, action: 'archive' | 'delete' | 'save') => {
+    const result = await window.narsil.applyAction(key, action)
     return result.ok ? null : (result.error ?? 'La acción falló.')
   }, [])
 
-  const onReply = useCallback(async (id: string, body: string) => {
-    const result = await window.narsil.sendReply(id, body)
+  const onReply = useCallback(async (key: string, body: string) => {
+    const result = await window.narsil.sendReply(key, body)
     return result.ok ? null : (result.error ?? 'No se pudo enviar la respuesta.')
   }, [])
 
@@ -73,6 +74,12 @@ export function App(): React.JSX.Element {
   }, [])
 
   const needsAttention = inbox.length > 0 || alert !== null
+  // Account labels only help once there is more than one mailbox to tell apart.
+  const accountLabel = useMemo(() => {
+    if (status.accounts.length < 2) return (): undefined => undefined
+    const emails = new Map(status.accounts.map((a) => [a.id, a.email]))
+    return (accountId: string): string | undefined => emails.get(accountId)
+  }, [status.accounts])
 
   if (!expanded) {
     return (
@@ -142,7 +149,7 @@ export function App(): React.JSX.Element {
 
       <section className="panel__body">
         {tab === 'setup' && <Setup status={status} />}
-        {tab === 'meetings' && <Meetings meetings={meetings} />}
+        {tab === 'meetings' && <Meetings meetings={meetings} accountLabel={accountLabel} />}
         {tab === 'rules' && (
           <Rules rules={rules} activity={activity} incomingDraft={ruleDraft} onDraftTaken={takeRuleDraft} />
         )}
@@ -158,7 +165,14 @@ export function App(): React.JSX.Element {
             <p className="empty">No tienes correos sin leer de los últimos dos días.</p>
           ) : (
             inbox.map((item) => (
-              <EmailCard key={item.email.id} item={item} onAction={onAction} onReply={onReply} onCreateRule={onCreateRule} />
+              <EmailCard
+                key={item.key}
+                item={item}
+                accountLabel={accountLabel(item.email.accountId)}
+                onAction={onAction}
+                onReply={onReply}
+                onCreateRule={onCreateRule}
+              />
             ))
           ))}
       </section>

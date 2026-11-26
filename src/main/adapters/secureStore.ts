@@ -2,7 +2,18 @@ import { app, safeStorage } from 'electron'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-export type SecretName = 'google-client' | 'google-tokens' | 'anthropic-key'
+export type SecretName =
+  | 'anthropic-key'
+  | 'accounts'
+  | 'google-client'
+  /** Legacy single-account Google tokens, migrated to per-account names on startup. */
+  | 'google-tokens'
+  | `google-tokens.${string}`
+  | 'microsoft-client'
+  | 'microsoft-cache'
+  | `microsoft-account.${string}`
+
+const SAFE_NAME = /^[a-z0-9][a-z0-9.-]*$/i
 
 /**
  * Stores secrets encrypted with the OS keychain (DPAPI on Windows) under the
@@ -12,6 +23,8 @@ export class SecureStore {
   private readonly dir = join(app.getPath('userData'), 'secrets')
 
   private file(name: SecretName): string {
+    // Names become file names: allow only a safe alphabet so an id can never escape the folder.
+    if (!SAFE_NAME.test(name)) throw new Error(`Invalid secret name: ${name}`)
     return join(this.dir, `${name}.bin`)
   }
 
