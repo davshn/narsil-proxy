@@ -25,6 +25,49 @@ const ID = LEGACY_GOOGLE_ACCOUNT_ID
 const offline = async (): Promise<string> => {
   throw new Error('offline')
 }
+const DEFAULTS = { includeCategories: false, windowDays: 2 }
+
+describe('AccountRegistry settings', () => {
+  it('reads an entry stored without settings as the default settings', () => {
+    const store = memoryStore({ accounts: JSON.stringify([{ id: 'g1', provider: 'google', email: 'ana@gmail.com' }]) })
+    expect(new AccountRegistry(store).list()).toEqual([
+      { id: 'g1', provider: 'google', email: 'ana@gmail.com', settings: DEFAULTS }
+    ])
+  })
+
+  it('reads invalid settings as the defaults instead of damaging the whole list', () => {
+    const stored = [{ id: 'g1', provider: 'google', email: 'ana@gmail.com', settings: { includeCategories: 'yes', windowDays: 5 } }]
+    const store = memoryStore({ accounts: JSON.stringify(stored) })
+    expect(new AccountRegistry(store).list()[0]?.settings).toEqual(DEFAULTS)
+  })
+
+  it('persists the settings of one account and keeps the others', () => {
+    const store = memoryStore()
+    const registry = new AccountRegistry(store)
+    registry.add({ id: 'g1', provider: 'google', email: 'ana@gmail.com' })
+    registry.add({ id: 'g2', provider: 'google', email: 'beto@gmail.com' })
+
+    const updated = registry.setSettings('g2', { includeCategories: true, windowDays: 30 })
+
+    expect(updated).toEqual({
+      id: 'g2',
+      provider: 'google',
+      email: 'beto@gmail.com',
+      settings: { includeCategories: true, windowDays: 30 }
+    })
+    expect(new AccountRegistry(store).list().map((a) => a.settings)).toEqual([
+      DEFAULTS,
+      { includeCategories: true, windowDays: 30 }
+    ])
+  })
+
+  it('refuses settings for an account that is not registered', () => {
+    const registry = new AccountRegistry(memoryStore())
+    expect(() => registry.setSettings('nope', { includeCategories: true, windowDays: 7 })).toThrow(
+      'Esta cuenta ya no está conectada.'
+    )
+  })
+})
 
 describe('AccountRegistry', () => {
   it('starts empty and persists added accounts as JSON in the accounts secret', () => {
@@ -81,11 +124,11 @@ describe('migrateLegacyGoogleTokens', () => {
 
     const migrated = await migrateLegacyGoogleTokens({ store, accounts, fetchEmail })
 
-    expect(migrated).toEqual({ id: ID, provider: 'google', email: 'ana@gmail.com' })
+    expect(migrated).toEqual({ id: ID, provider: 'google', email: 'ana@gmail.com', settings: DEFAULTS })
     expect(fetchEmail).toHaveBeenCalledWith(LEGACY)
     expect(store.data.get(`google-tokens.${ID}`)).toBe(LEGACY)
     expect(store.data.has('google-tokens')).toBe(false)
-    expect(accounts.list()).toEqual([{ id: ID, provider: 'google', email: 'ana@gmail.com' }])
+    expect(accounts.list()).toEqual([{ id: ID, provider: 'google', email: 'ana@gmail.com', settings: DEFAULTS }])
   })
 
   it('keeps the legacy tokens untouched and adds no account when the profile lookup fails', async () => {
@@ -114,7 +157,7 @@ describe('migrateLegacyGoogleTokens', () => {
 
     const migrated = await migrateLegacyGoogleTokens({ store, accounts, fetchEmail: async () => 'ana@gmail.com' })
 
-    expect(migrated).toEqual({ id: ID, provider: 'google', email: 'ana@gmail.com' })
+    expect(migrated).toEqual({ id: ID, provider: 'google', email: 'ana@gmail.com', settings: DEFAULTS })
     expect(store.data.has('google-tokens')).toBe(false)
     expect(accounts.list().map((a) => a.email)).toEqual(['work@gmail.com', 'ana@gmail.com'])
   })
@@ -135,7 +178,7 @@ describe('migrateLegacyGoogleTokens', () => {
 
     expect(await pending).toBeNull()
 
-    expect(accounts.list()).toEqual([{ id: 'g-ui', provider: 'google', email: 'Ana@Gmail.com' }])
+    expect(accounts.list()).toEqual([{ id: 'g-ui', provider: 'google', email: 'Ana@Gmail.com', settings: DEFAULTS }])
     expect(store.data.has('google-tokens')).toBe(false)
     expect(store.data.has(`google-tokens.${ID}`)).toBe(false)
     expect(store.data.get('google-tokens.g-ui')).toBe('{"refresh_token":"r-ui"}')
@@ -160,7 +203,7 @@ describe('migrateLegacyGoogleTokens', () => {
     expect(fetchEmail).not.toHaveBeenCalled()
     expect(store.data.has('google-tokens')).toBe(false)
     expect(store.data.get(`google-tokens.${ID}`)).toBe(LEGACY)
-    expect(accounts.list()).toEqual([{ id: ID, provider: 'google', email: 'ana@gmail.com' }])
+    expect(accounts.list()).toEqual([{ id: ID, provider: 'google', email: 'ana@gmail.com', settings: DEFAULTS }])
   })
 
   it('leaves no orphan token copy after a crash between copying and registering', async () => {

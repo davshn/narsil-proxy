@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { EmailAction, InboxItem } from '@shared/types'
+import { FolderPicker } from './FolderPicker'
 
 type QuickAction = Exclude<EmailAction, 'reply'>
 
@@ -13,7 +14,7 @@ const ACTION_LABEL: Record<EmailAction, string> = {
 const ACTION_HINT: Record<QuickAction, string> = {
   archive: 'Quitar de la bandeja de entrada y conservar en Todos',
   delete: 'Mover a la papelera (recuperable durante 30 días)',
-  save: 'Destacar y mantener en la bandeja de entrada'
+  save: 'Mover a una carpeta o etiqueta'
 }
 
 interface EmailCardProps {
@@ -22,7 +23,8 @@ interface EmailCardProps {
   accountLabel?: string | undefined
   /** True briefly after a notification for this email was clicked. */
   highlighted?: boolean
-  onAction(key: string, action: QuickAction): Promise<string | null>
+  /** `save` passes the folder the email moves to. */
+  onAction(key: string, action: QuickAction, folderId?: string): Promise<string | null>
   onReply(key: string, body: string): Promise<string | null>
   onCreateRule(from: string): void
 }
@@ -46,6 +48,7 @@ export function EmailCard({
 }: EmailCardProps): React.JSX.Element {
   const { email, triage } = item
   const [draft, setDraft] = useState<string | null>(null)
+  const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const recommended = triage?.recommendedAction
@@ -138,7 +141,19 @@ export function EmailCard({
         </div>
       )}
 
-      {draft === null && (
+      {draft === null && picking && (
+        <div className="mail__picker">
+          <p className="mail__picker-title">Guardar en</p>
+          <FolderPicker
+            accountId={email.accountId}
+            busy={busy}
+            onPick={(folder) => void act(() => onAction(item.key, 'save', folder.id))}
+            onCancel={() => setPicking(false)}
+          />
+        </div>
+      )}
+
+      {draft === null && !picking && (
         <div className="mail__actions">
           <button
             type="button"
@@ -155,7 +170,7 @@ export function EmailCard({
               className={`btn btn--${action}${recommended === action ? ' btn--lead' : ''}`}
               title={ACTION_HINT[action]}
               disabled={busy}
-              onClick={() => void act(() => onAction(item.key, action))}
+              onClick={() => (action === 'save' ? setPicking(true) : void act(() => onAction(item.key, action)))}
             >
               {ACTION_LABEL[action]}
             </button>

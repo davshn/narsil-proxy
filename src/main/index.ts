@@ -2,10 +2,18 @@ import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeIm
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { IPC, type Account, type ActionResult, type EmailAction, type InboxItem } from '@shared/types'
+import {
+  IPC,
+  type Account,
+  type ActionResult,
+  type EmailAction,
+  type FolderResult,
+  type FoldersResult,
+  type InboxItem
+} from '@shared/types'
 import { SecureStore } from './adapters/secureStore'
 import { NarsilService, type NarsilEvents } from './app/narsilService'
-import { AccountRegistry, migrateLegacyGoogleTokens } from './app/accounts'
+import { AccountRegistry, AccountSettingsSchema, migrateLegacyGoogleTokens } from './app/accounts'
 import { RulesFileStore } from './adapters/rulesStore'
 import { GoogleProvider } from './adapters/google/provider'
 import { MicrosoftProvider } from './adapters/microsoft/provider'
@@ -177,12 +185,16 @@ function notifyNewEmails(items: InboxItem[], accounts: Account[]): void {
   notification.show()
 }
 
+function failure(error: unknown): ActionResult {
+  return { ok: false, error: error instanceof Error ? error.message : String(error) }
+}
+
 async function run(fn: () => Promise<void> | void): Promise<ActionResult> {
   try {
     await fn()
     return { ok: true }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    return failure(error)
   }
 }
 
@@ -192,6 +204,10 @@ const AccountId = z.string().min(1).max(64)
 const ProviderSchema = z.enum(['google', 'microsoft'])
 const ClientId = z.string().max(100)
 const ActionSchema = z.enum(['archive', 'delete', 'save'])
+/** Graph folder ids are long base64 strings, like message ids. */
+const FolderId = z.string().min(1).max(1024)
+/** The service trims it and enforces 1-100 characters with a Spanish message. */
+const FolderName = z.string().max(500)
 const ReplyBody = z.string().min(1).max(50_000)
 const ApiKey = z.string().max(500)
 const Condition = z.string().max(200)
@@ -200,7 +216,8 @@ const RuleInputSchema = z.object({
   name: z.string().max(120),
   enabled: z.boolean(),
   action: ActionSchema,
-  conditions: z.object({ from: Condition, subject: Condition, body: Condition })
+  conditions: z.object({ from: Condition, subject: Condition, body: Condition }),
+  folder: z.object({ accountId: AccountId, id: FolderId, name: z.string().max(500) }).optional()
 })
 
 function registerIpc(svc: NarsilService): void {
@@ -212,8 +229,25 @@ function registerIpc(svc: NarsilService): void {
   ipcMain.handle(IPC.removeAccount, (_e, id: unknown) => run(() => svc.removeAccount(AccountId.parse(id))))
   ipcMain.handle(IPC.setMicrosoftClientId, (_e, id: unknown) => run(() => svc.setMicrosoftClientId(ClientId.parse(id))))
   ipcMain.handle(IPC.setAnthropicKey, (_e, key: unknown) => run(() => svc.setAnthropicKey(ApiKey.parse(key))))
-  ipcMain.handle(IPC.applyAction, (_e, key: unknown, action: unknown) =>
-    run(() => svc.applyAction(ItemKey.parse(key), ActionSchema.parse(action)))
+  ipcMain.handle(IPC.applyAction, (_e, key: unknown, action: unknown, folderId: unknown) =>
+    run(() => svc.applyAction(ItemKey.parse(key), ActionSchema.parse(action), FolderId.optional().parse(folderId)))
+  )
+  ipcMain.handle(IPC.listFolders, async (_e, accountId: unknown): Promise<FoldersResult> => {
+    try {
+      return { ok: true, folders: await svc.listFolders(AccountId.parse(accountId)) }
+    } catch (error) {
+      return failure(error)
+    }
+  })
+  ipcMain.handle(IPC.createFolder, async (_e, accountId: unknown, name: unknown): Promise<FolderResult> => {
+    try {
+      return { ok: true, folder: await svc.createFolder(AccountId.parse(accountId), FolderName.parse(name)) }
+    } catch (error) {
+      return failure(error)
+    }
+  })
+  ipcMain.handle(IPC.setAccountSettings, (_e, accountId: unknown, settings: unknown) =>
+    run(() => svc.setAccountSettings(AccountId.parse(accountId), AccountSettingsSchema.parse(settings)))
   )
   ipcMain.handle(IPC.sendReply, (_e, key: unknown, body: unknown) =>
     run(() => svc.sendReply(ItemKey.parse(key), ReplyBody.parse(body)))

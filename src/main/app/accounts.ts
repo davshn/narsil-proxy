@@ -1,21 +1,67 @@
 import { z } from 'zod'
-import type { Account } from '@shared/types'
+import { DEFAULT_ACCOUNT_SETTINGS, type Account, type AccountSettings } from '@shared/types'
 import type { SecureStore } from '../adapters/secureStore'
 
 /** The part of SecureStore the core uses; tests pass an in-memory implementation. */
 export type SecretStore = Pick<SecureStore, 'get' | 'getStrict' | 'set' | 'delete' | 'has' | 'list'>
 
+export const AccountSettingsSchema = z.object({
+  includeCategories: z.boolean(),
+  windowDays: z.union([z.literal(2), z.literal(7), z.literal(30)])
+})
+
 const AccountsSchema = z.array(
-  z.object({ id: z.string().min(1), provider: z.enum(['google', 'microsoft']), email: z.string() })
+  z.object({
+    id: z.string().min(1),
+    provider: z.enum(['google', 'microsoft']),
+    email: z.string(),
+    // Entries saved before settings existed have none; unreadable settings must not damage the list.
+    settings: z.unknown().optional()
+  })
 )
 
+/** An account as it is added; without settings it uses the defaults. */
+export type NewAccount = Omit<Account, 'settings'> & { settings?: AccountSettings }
+
 const DAMAGED = 'La lista de cuentas está dañada.'
+const UNKNOWN_ACCOUNT = 'Esta cuenta ya no está conectada.'
+
+function readSettings(raw: unknown): AccountSettings {
+  const parsed = AccountSettingsSchema.safeParse(raw)
+  return parsed.success ? parsed.data : { ...DEFAULT_ACCOUNT_SETTINGS }
+}
 
 /** The connected accounts, stored as JSON in the encrypted `accounts` secret. */
 export class AccountRegistry {
   constructor(private readonly store: SecretStore) {}
 
+  /** Every account, with its settings or the defaults when it has none. */
   list(): Account[] {
+    return this.read().map((entry) => ({ ...entry, settings: readSettings(entry.settings) }))
+  }
+
+  add(account: NewAccount): void {
+    this.write([...this.read().filter((a) => a.id !== account.id), account])
+  }
+
+  /** Saves one account's settings and returns the updated account. */
+  setSettings(id: string, settings: AccountSettings): Account {
+    const valid = AccountSettingsSchema.parse(settings)
+    const entries = this.read()
+    const entry = entries.find((a) => a.id === id)
+    if (!entry) throw new Error(UNKNOWN_ACCOUNT)
+    this.write(entries.map((a) => (a.id === id ? { ...a, settings: valid } : a)))
+    return { id: entry.id, provider: entry.provider, email: entry.email, settings: valid }
+  }
+
+  remove(id: string): void {
+    const accounts = this.read()
+    const kept = accounts.filter((a) => a.id !== id)
+    if (kept.length !== accounts.length) this.write(kept)
+  }
+
+  /** The stored entries as they are, so a rewrite keeps an entry without settings unchanged. */
+  private read(): Array<z.infer<typeof AccountsSchema>[number]> {
     let raw: string | null
     try {
       // A strict read: an undecryptable list must not look like an empty one.
@@ -35,17 +81,7 @@ export class AccountRegistry {
     return parsed.data
   }
 
-  add(account: Account): void {
-    this.write([...this.list().filter((a) => a.id !== account.id), account])
-  }
-
-  remove(id: string): void {
-    const accounts = this.list()
-    const kept = accounts.filter((a) => a.id !== id)
-    if (kept.length !== accounts.length) this.write(kept)
-  }
-
-  private write(accounts: Account[]): void {
+  private write(accounts: unknown[]): void {
     this.store.set('accounts', JSON.stringify(accounts))
   }
 }
@@ -115,7 +151,7 @@ export async function migrateLegacyGoogleTokens(migration: LegacyGoogleMigration
     store.delete('google-tokens')
     return null
   }
-  const account: Account = { id, provider: 'google', email }
+  const account: Account = { id, provider: 'google', email, settings: { ...DEFAULT_ACCOUNT_SETTINGS } }
   accounts.add(account)
   store.delete('google-tokens')
   return account

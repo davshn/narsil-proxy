@@ -961,3 +961,133 @@ textarea {
 .activity__error {
   color: var(--danger-text);
 }
+
+/* Per-account inbox settings: a second line under the account's address. */
+.account {
+  flex-wrap: wrap;
+}
+
+.account__settings {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  color: var(--text-2);
+}
+
+.account__toggle,
+.account__window {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.account__window select {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-3);
+  color: var(--text-0);
+}
+
+.account__busy {
+  font-style: italic;
+}
+
+/* Folder picker: "Guardar" on an email and the folder of a "Mover a carpeta" rule. */
+.mail__picker {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+.mail__picker-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.rule-form__folder {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.folders {
+  display: grid;
+  gap: 6px;
+}
+
+.folders__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 140px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.folder {
+  max-width: 100%;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.folder:hover:not(:disabled) {
+  border-color: var(--accent-text);
+}
+
+.folder--on {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.folder:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.folders__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.folders__new {
+  display: flex;
+  gap: 6px;
+}
+
+.folders__new input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-3);
+  color: var(--text-0);
+}
+
+.folders__note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.folders__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger-text);
+}

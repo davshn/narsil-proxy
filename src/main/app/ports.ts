@@ -1,4 +1,4 @@
-import type { Meeting, ProviderKind } from '@shared/types'
+import type { AccountSettings, MailFolder, Meeting, ProviderKind } from '@shared/types'
 import type { ParsedEmail } from '../domain/email'
 
 /**
@@ -8,8 +8,12 @@ import type { ParsedEmail } from '../domain/email'
 
 /** Mail operations for one connected account. Message ids are the provider's own ids. */
 export interface MailProvider {
-  /** Ids of unread inbox messages from the last two days, newest first, at most 20. */
-  listUnread(): Promise<string[]>
+  /**
+   * Ids of unread inbox messages from the last `settings.windowDays` days, newest first, at most 20.
+   * Without `settings.includeCategories` it skips Gmail's Promotions and Social tabs and
+   * Outlook's "Other" tab of Focused Inbox.
+   */
+  listUnread(settings: AccountSettings): Promise<string[]>
   /**
    * A cheap opaque token that changes whenever the inbox may have new mail
    * (Gmail: the mailbox historyId; Outlook: inbox counts plus the newest message id).
@@ -22,8 +26,15 @@ export interface MailProvider {
   archive(id: string): Promise<void>
   /** Moves to the provider's trash / Deleted Items. Never deletes permanently. */
   trash(id: string): Promise<void>
-  /** Marks for follow-up (Gmail: star, Outlook: flag) and marks read, keeping it in the inbox. */
-  save(id: string): Promise<void>
+  /**
+   * Folders the user can move mail to (Gmail: user labels; Outlook: mail folders without the
+   * well-known ones, children as `Parent/Child`), sorted by name.
+   */
+  listFolders(): Promise<MailFolder[]>
+  /** Creates a folder (Gmail: a visible label) with an already validated name. */
+  createFolder(name: string): Promise<MailFolder>
+  /** Moves out of the inbox into the folder and marks read (Gmail: adds the label). */
+  moveToFolder(id: string, folderId: string): Promise<void>
   /** Sends `body` as a reply in the same thread from this account, then marks the message read. */
   reply(email: ParsedEmail, body: string): Promise<void>
 }

@@ -256,10 +256,11 @@ describe('Outlook mail through Microsoft Graph', () => {
     expect(calls().some((c) => c.method === 'DELETE')).toBe(false)
   })
 
-  it('saves by flagging and marking read', async () => {
-    await connect().mail.save('m1')
+  it('moves to a folder: marks read, then moves to that folder id', async () => {
+    await connect().mail.moveToFolder('m1', 'folder/1')
     expect(calls().map(({ method, url, body }) => ({ method, url, body }))).toEqual([
-      { method: 'PATCH', url: `${GRAPH}/me/messages/m1`, body: { isRead: true, flag: { flagStatus: 'flagged' } } }
+      { method: 'PATCH', url: `${GRAPH}/me/messages/m1`, body: { isRead: true } },
+      { method: 'POST', url: `${GRAPH}/me/messages/m1/move`, body: { destinationId: 'folder/1' } }
     ])
   })
 
@@ -301,13 +302,28 @@ describe('Outlook mail through Microsoft Graph', () => {
         ]
       })
     )
-    expect(await connect().mail.listUnread()).toEqual(['new', 'old'])
+    expect(await connect().mail.listUnread({ includeCategories: true, windowDays: 2 })).toEqual(['new', 'old'])
     const url = new URL(calls()[0]?.url ?? '')
     expect(url.origin + url.pathname).toBe(`${GRAPH}/me/mailFolders/inbox/messages`)
     expect(url.searchParams.get('$filter')).toBe('isRead eq false and receivedDateTime ge 2026-11-23T12:00:00.000Z')
     expect(url.searchParams.get('$select')).toBe('id,receivedDateTime')
     expect(url.searchParams.get('$top')).toBe('20')
     expect(url.searchParams.has('$orderby')).toBe(false)
+  })
+
+  it.each([
+    [false, 2, "isRead eq false and receivedDateTime ge 2026-11-23T12:00:00.000Z and inferenceClassification eq 'focused'"],
+    [false, 7, "isRead eq false and receivedDateTime ge 2026-11-18T12:00:00.000Z and inferenceClassification eq 'focused'"],
+    [false, 30, "isRead eq false and receivedDateTime ge 2026-10-26T12:00:00.000Z and inferenceClassification eq 'focused'"],
+    [true, 2, 'isRead eq false and receivedDateTime ge 2026-11-23T12:00:00.000Z'],
+    [true, 7, 'isRead eq false and receivedDateTime ge 2026-11-18T12:00:00.000Z'],
+    [true, 30, 'isRead eq false and receivedDateTime ge 2026-10-26T12:00:00.000Z']
+  ] as const)('filters unread mail with includeCategories=%s over %i days', async (includeCategories, windowDays, filter) => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-25T12:00:00Z'))
+    fetchMock.mockImplementation(async () => respond(200, { value: [] }))
+    await connect().mail.listUnread({ includeCategories, windowDays })
+    expect(new URL(calls()[0]?.url ?? '').searchParams.get('$filter')).toBe(filter)
   })
 
   it('builds the change token from the inbox counts and the newest message id', async () => {
@@ -345,6 +361,92 @@ describe('Outlook mail through Microsoft Graph', () => {
     expect(new URL(call?.url ?? '').searchParams.get('$select')).toBe(
       'id,conversationId,subject,from,replyTo,bodyPreview,body,receivedDateTime,internetMessageId'
     )
+  })
+})
+
+describe('Outlook folders through Microsoft Graph', () => {
+  const WELL_KNOWN: Record<string, string> = {
+    inbox: 'id-inbox',
+    drafts: 'id-drafts',
+    sentitems: 'id-sent',
+    deleteditems: 'id-deleted',
+    junkemail: 'id-junk',
+    outbox: 'id-outbox',
+    conversationhistory: 'id-history'
+  }
+
+  /** Answers like Graph: well-known names resolve to ids; children only for the folders asked. */
+  function folderServer(missing: string[] = []): void {
+    fetchMock.mockImplementation(async (input) => {
+      const path = decodeURIComponent(new URL(String(input)).pathname.replace('/v1.0', ''))
+      const wellKnown = /^\/me\/mailFolders\/([a-z]+)$/.exec(path)?.[1]
+      if (wellKnown && missing.includes(wellKnown)) return respond(404, { error: { message: 'not found' } })
+      if (wellKnown && WELL_KNOWN[wellKnown]) return respond(200, { id: WELL_KNOWN[wellKnown] })
+      if (path === '/me/mailFolders') {
+        return respond(200, {
+          value: [
+            { id: 'id-inbox', displayName: 'Bandeja de entrada', childFolderCount: 1 },
+            { id: 'id-drafts', displayName: 'Borradores', childFolderCount: 0 },
+            { id: 'id-sent', displayName: 'Elementos enviados', childFolderCount: 0 },
+            { id: 'id-deleted', displayName: 'Elementos eliminados', childFolderCount: 2 },
+            { id: 'id-junk', displayName: 'Correo no deseado', childFolderCount: 0 },
+            { id: 'id-outbox', displayName: 'Bandeja de salida', childFolderCount: 0 },
+            { id: 'id-history', displayName: 'Historial de conversaciones', childFolderCount: 0 },
+            { id: 'id-archive', displayName: 'Archivo', childFolderCount: 0 },
+            { id: 'id-work', displayName: 'Trabajo', childFolderCount: 2 }
+          ]
+        })
+      }
+      if (path === '/me/mailFolders/id-work/childFolders') {
+        return respond(200, {
+          value: [
+            { id: 'id-clients', displayName: 'Clientes', childFolderCount: 0 },
+            { id: 'id-bills', displayName: 'Facturas', childFolderCount: 0 }
+          ]
+        })
+      }
+      if (path === '/me/mailFolders/id-inbox/childFolders') {
+        return respond(200, { value: [{ id: 'id-news', displayName: 'Boletines', childFolderCount: 0 }] })
+      }
+      return respond(404, { error: { message: `unexpected ${path}` } })
+    })
+  }
+
+  it('lists folders without the well-known ones, with one level of children as Parent/Child, sorted', async () => {
+    folderServer()
+
+    const folders = await connect().mail.listFolders()
+
+    expect(folders).toEqual([
+      { id: 'id-archive', name: 'Archivo' },
+      { id: 'id-news', name: 'Bandeja de entrada/Boletines' },
+      { id: 'id-work', name: 'Trabajo' },
+      { id: 'id-clients', name: 'Trabajo/Clientes' },
+      { id: 'id-bills', name: 'Trabajo/Facturas' }
+    ])
+    const top = calls()
+      .map((c) => new URL(c.url))
+      .find((u) => u.pathname === '/v1.0/me/mailFolders')
+    expect(top?.searchParams.get('$top')).toBe('100')
+    expect(calls().some((c) => c.url.includes('id-deleted/childFolders'))).toBe(false)
+    expect(calls().every((c) => c.method === 'GET')).toBe(true)
+  })
+
+  it('still lists folders when a well-known folder does not exist in the mailbox', async () => {
+    folderServer(['conversationhistory'])
+
+    const ids = (await connect().mail.listFolders()).map((f) => f.id)
+
+    expect(ids).toContain('id-history')
+    expect(ids).not.toContain('id-inbox')
+  })
+
+  it('creates a top-level folder', async () => {
+    fetchMock.mockImplementation(async () => respond(201, { id: 'id-new', displayName: 'Facturas' }))
+    expect(await connect().mail.createFolder('Facturas')).toEqual({ id: 'id-new', name: 'Facturas' })
+    expect(calls().map(({ method, url, body }) => ({ method, url, body }))).toEqual([
+      { method: 'POST', url: `${GRAPH}/me/mailFolders`, body: { displayName: 'Facturas' } }
+    ])
   })
 })
 

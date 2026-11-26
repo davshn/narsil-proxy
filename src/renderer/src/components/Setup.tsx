@@ -1,11 +1,17 @@
 import { useState } from 'react'
-import type { ActionResult, AppStatus, ProviderKind } from '@shared/types'
+import { INBOX_WINDOW_DAYS, type Account, type ActionResult, type AccountSettings, type AppStatus, type InboxWindowDays, type ProviderKind } from '@shared/types'
 
 interface SetupProps {
   status: AppStatus
 }
 
 const PROVIDER_NAME: Record<ProviderKind, string> = { google: 'Google', microsoft: 'Microsoft' }
+
+/** What "include categories" means for each provider. */
+const CATEGORIES_LABEL: Record<ProviderKind, string> = {
+  google: 'Incluir Promociones y Social',
+  microsoft: 'Incluir la bandeja Otros'
+}
 
 export function Setup({ status }: SetupProps): React.JSX.Element {
   const [key, setKey] = useState('')
@@ -20,6 +26,10 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
     setBusy(null)
     if (!result.ok) setMessage(result.error ?? 'Algo salió mal.')
     return result.ok
+  }
+
+  function changeSettings(account: Account, next: AccountSettings): void {
+    void run(`settings-${account.id}`, () => window.narsil.setAccountSettings(account.id, next))
   }
 
   function addButton(provider: ProviderKind, configured: boolean): React.JSX.Element {
@@ -109,6 +119,34 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
                   >
                     {busy === `remove-${account.id}` ? 'Quitando…' : 'Quitar'}
                   </button>
+                  <div className="account__settings" role="group" aria-label={`Qué revisa Narsil en ${account.email}`}>
+                    <label className="account__toggle">
+                      <input
+                        type="checkbox"
+                        checked={account.settings.includeCategories}
+                        disabled={busy !== null}
+                        onChange={(e) => changeSettings(account, { ...account.settings, includeCategories: e.target.checked })}
+                      />
+                      {CATEGORIES_LABEL[account.provider]}
+                    </label>
+                    <label className="account__window">
+                      Revisar
+                      <select
+                        value={account.settings.windowDays}
+                        disabled={busy !== null}
+                        onChange={(e) =>
+                          changeSettings(account, { ...account.settings, windowDays: Number(e.target.value) as InboxWindowDays })
+                        }
+                      >
+                        {INBOX_WINDOW_DAYS.map((days) => (
+                          <option key={days} value={days}>
+                            {days} días
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {busy === `settings-${account.id}` && <span className="account__busy">Revisando…</span>}
+                  </div>
                 </li>
               ))}
             </ul>

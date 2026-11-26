@@ -3,7 +3,7 @@
 Narsil is a small assistant that floats in the bottom-right corner of your Windows desktop. It:
 
 - connects any number of Google accounts (Gmail and Google Calendar) and Microsoft accounts (Outlook.com, Hotmail and Microsoft 365), and shows them as one inbox and one meetings list,
-- watches each inbox for unread mail from the last two days (skipping Gmail's Promotions and Social tabs),
+- watches each inbox for unread mail from the last two days by default, skipping Gmail's Promotions and Social tabs and Outlook's "Other" tab (see [Inbox settings](#inbox-settings)),
 - uses Claude to summarize each email, recommend **reply**, **save**, **archive** or **delete**, and draft up to three replies you can edit before sending,
 - reads each account's calendar and reminds you **15 minutes** and again **5 minutes** before each meeting, with a Windows notification and a banner that has a "Unirse a la llamada" (join call) button. The interface is in Spanish.
 
@@ -11,7 +11,7 @@ Nothing is sent, archived or deleted without your click. With more than one acco
 
 | Button | Gmail | Outlook |
 | --- | --- | --- |
-| Guardar (save) | Stars the email and marks it read. It stays in the inbox. | Flags the email and marks it read. It stays in the inbox. |
+| Guardar (save) | Opens a list of your labels, plus **Nueva carpeta…** (new folder) to create one. Picking a label adds it, removes the email from the inbox and marks it read. A `/` in a new name nests the label, as in `Facturas/2026`. | Opens a list of your folders, with subfolders shown as `Parent/Child`, plus **Nueva carpeta…** to create one. Picking a folder marks the email read and moves it there. |
 | Archivar (archive) | Removes it from the inbox and marks it read. It stays in All Mail. | Moves it to the Archive folder and marks it read. |
 | Eliminar (delete) | Moves it to Trash, where Gmail keeps it for 30 days. | Moves it to Deleted Items. |
 | Enviar respuesta (send reply) | Sends your reply in the same thread and marks the email read. | Sends your reply in the same conversation and marks the email read. |
@@ -34,7 +34,7 @@ Narsil talks to Gmail and Calendar with your own Google Cloud project, so your d
 
 Keep that file private. Narsil asks for these permissions:
 
-- `gmail.modify`: read mail, star, archive and move to Trash (it cannot permanently delete)
+- `gmail.modify`: read mail, create and apply labels, archive and move to Trash (it cannot permanently delete)
 - `gmail.send`: send the replies you approve
 - `calendar.readonly`: read your events
 
@@ -93,7 +93,7 @@ Secrets are encrypted with Windows DPAPI (Electron `safeStorage`) under `%APPDAT
 
 ### Rules
 
-The **Reglas** (rules) tab holds rules you define, such as "sender contains `shop.example`: move to Trash". Each rule has up to three case-insensitive "contains" conditions (sender, subject, body text). All the conditions you fill in must match, and a rule needs at least one. Its action is archive, move to Trash, or save.
+The **Reglas** (rules) tab holds rules you define, such as "sender contains `shop.example`: move to Trash". Each rule has up to three case-insensitive "contains" conditions (sender, subject, body text). All the conditions you fill in must match, and a rule needs at least one. Its action is move to a folder (**Mover a carpeta**), archive, or move to Trash.
 
 - Rules run on every new email **before** Claude sees it, so a handled email never costs an API call and never appears in the list.
 - Saving a rule also applies it to the emails already in the list.
@@ -102,7 +102,16 @@ The **Reglas** (rules) tab holds rules you define, such as "sender contains `sho
 - **Actividad reciente** (recent activity) lists the last 50 actions rules took, including failures. A failed action leaves the email in the list.
 - Rules only run while Narsil is open. They are stored as plain JSON in `%APPDATA%\narsil-proxy\rules.json`.
 
-Rules apply to the mail of every connected account. They never delete permanently: "Eliminar" moves the email to Trash in Gmail, where it stays for 30 days, or to Deleted Items in Outlook.
+Rules apply to the mail of every connected account, except **Mover a carpeta**: a folder belongs to one account, so that rule only acts on that account's mail. A "save" rule created before folders existed has no folder; it archives, and the rule list says so ("archivar (regla anterior sin carpeta)"). Editing it lets you pick a folder. They never delete permanently: "Eliminar" moves the email to Trash in Gmail, where it stays for 30 days, or to Deleted Items in Outlook.
+
+### Inbox settings
+
+**Ajustes → Cuentas** (settings, accounts) has two settings for each account:
+
+- **Incluir Promociones y Social** (Gmail) or **Incluir la bandeja Otros** (Outlook): also review the mail Gmail sorts into its Promotions and Social tabs, or the mail Outlook's Focused Inbox puts in "Other". Off by default.
+- **Revisar** (review): how far back Narsil looks for unread mail, 2, 7 or 30 days. 2 by default.
+
+Narsil reviews that account's inbox again as soon as you change a setting. At most 20 unread emails per account are listed.
 
 ### New-mail notifications
 

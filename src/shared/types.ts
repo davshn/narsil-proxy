@@ -4,11 +4,42 @@ export type EmailAction = 'reply' | 'archive' | 'delete' | 'save'
 
 export type ProviderKind = 'google' | 'microsoft'
 
+/** How many days back Narsil looks for unread mail. */
+export type InboxWindowDays = 2 | 7 | 30
+
+export const INBOX_WINDOW_DAYS: readonly InboxWindowDays[] = [2, 7, 30]
+
+/** Which unread mail Narsil reviews for one account. */
+export interface AccountSettings {
+  /**
+   * Gmail: also review the Promotions and Social tabs.
+   * Outlook: also review the "Other" tab of Focused Inbox.
+   */
+  includeCategories: boolean
+  windowDays: InboxWindowDays
+}
+
+export const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = { includeCategories: false, windowDays: 2 }
+
 /** A connected mailbox. `id` is an opaque randomUUID assigned when the account is added. */
 export interface Account {
   id: string
   provider: ProviderKind
   email: string
+  settings: AccountSettings
+}
+
+/** A Gmail user label or an Outlook mail folder. `name` shows nesting as `Parent/Child`. */
+export interface MailFolder {
+  id: string
+  name: string
+}
+
+/** Where a local save rule moves mail: a folder of one account. */
+export interface RuleFolder {
+  accountId: string
+  id: string
+  name: string
 }
 
 export interface EmailSummary {
@@ -46,28 +77,37 @@ export interface RuleConditions {
   body: string
 }
 
+/**
+ * A local rule. `save` means "move to `folder`", and then the rule only acts on mail of the
+ * folder's account. A `save` rule stored before folders existed has no folder and archives.
+ */
 export interface Rule {
   id: string
   name: string
   enabled: boolean
   conditions: RuleConditions
   action: RuleAction
+  folder?: RuleFolder
 }
 
-/** A rule as the user edits it; without `id` it is a new rule. */
+/** A rule as the user edits it; without `id` it is a new rule. A `save` rule needs `folder`. */
 export interface RuleInput {
   id?: string
   name: string
   enabled: boolean
   conditions: RuleConditions
   action: RuleAction
+  folder?: RuleFolder
 }
 
 /** One action a rule took (or tried to take) on an email. */
 export interface RuleActivity {
   id: string
   ruleName: string
+  /** The action actually taken: an old `save` rule without a folder records `archive`. */
   action: RuleAction
+  /** The destination folder of a `save` action. */
+  folderName?: string
   from: string
   subject: string
   /** ISO 8601 timestamp. */
@@ -118,6 +158,14 @@ export interface ActionResult {
   error?: string
 }
 
+export interface FoldersResult extends ActionResult {
+  folders?: MailFolder[]
+}
+
+export interface FolderResult extends ActionResult {
+  folder?: MailFolder
+}
+
 export interface NarsilApi {
   getStatus(): Promise<AppStatus>
   importGoogleClient(): Promise<ActionResult>
@@ -128,7 +176,13 @@ export interface NarsilApi {
   getInbox(): Promise<InboxItem[]>
   getMeetings(): Promise<Meeting[]>
   refresh(): Promise<ActionResult>
-  applyAction(key: string, action: Exclude<EmailAction, 'reply'>): Promise<ActionResult>
+  /** `save` moves the email to `folderId`, which it requires. */
+  applyAction(key: string, action: Exclude<EmailAction, 'reply'>, folderId?: string): Promise<ActionResult>
+  listFolders(accountId: string): Promise<FoldersResult>
+  /** The name is trimmed and must be 1-100 characters; `/` nests Gmail labels. */
+  createFolder(accountId: string, name: string): Promise<FolderResult>
+  /** Saves the account's inbox settings, then reviews that account's inbox again with them. */
+  setAccountSettings(accountId: string, settings: AccountSettings): Promise<ActionResult>
   sendReply(key: string, body: string): Promise<ActionResult>
   setExpanded(expanded: boolean): Promise<void>
   getRules(): Promise<Rule[]>
@@ -156,6 +210,9 @@ export const IPC = {
   getMeetings: 'narsil:get-meetings',
   refresh: 'narsil:refresh',
   applyAction: 'narsil:apply-action',
+  listFolders: 'narsil:list-folders',
+  createFolder: 'narsil:create-folder',
+  setAccountSettings: 'narsil:set-account-settings',
   sendReply: 'narsil:send-reply',
   setExpanded: 'narsil:set-expanded',
   getRules: 'narsil:get-rules',

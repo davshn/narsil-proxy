@@ -136,7 +136,7 @@ describe('NarsilService.addAccount joined by a second click', () => {
     const results = await Promise.allSettled([first, second])
 
     expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled'])
-    expect(accounts.list()).toEqual([{ id: 'n1', provider: 'google', email: 'ana@gmail.com' }])
+    expect(accounts.list()).toEqual([{ id: 'n1', provider: 'google', email: 'ana@gmail.com', settings: { includeCategories: false, windowDays: 2 } }])
     expect(store.data.has('google-tokens.n1')).toBe(true)
     expect(revoked).toEqual([])
   })

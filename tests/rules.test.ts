@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emailAddress, findMatchingRule, normalizeRule, ruleDraftFromEmail } from '@shared/rules'
+import { describeRuleAction, emailAddress, findMatchingRule, normalizeRule, ruleDraftFromEmail } from '@shared/rules'
 import type { Rule } from '@shared/types'
 
 const email = { from: 'Ofertas Top <promo@Shop.example>', subject: '70% de descuento solo HOY', body: 'Compra ya. Darse de baja aquí.' }
@@ -71,8 +71,57 @@ describe('normalizeRule', () => {
   })
 
   it('names an unnamed rule after its conditions', () => {
-    const r = normalizeRule({ name: '', enabled: true, action: 'save', conditions: { from: 'banco.com', subject: '', body: '' } }, 'x')
+    const r = normalizeRule({ name: '', enabled: true, action: 'archive', conditions: { from: 'banco.com', subject: '', body: '' } }, 'x')
     expect(r.name).toBe('Remitente contiene "banco.com"')
+  })
+
+  it('requires a folder for a save rule', () => {
+    expect(() =>
+      normalizeRule({ name: '', enabled: true, action: 'save', conditions: { from: 'banco.com', subject: '', body: '' } }, 'x')
+    ).toThrow('Elige la carpeta donde se guardan estos correos.')
+  })
+
+  it('keeps the folder of a save rule and drops it for other actions', () => {
+    const folder = { accountId: 'g1', id: 'Label_1', name: ' Bancos ' }
+    const conditions = { from: 'banco.com', subject: '', body: '' }
+    expect(normalizeRule({ name: 'B', enabled: true, action: 'save', conditions, folder }, 'x').folder).toEqual({
+      accountId: 'g1',
+      id: 'Label_1',
+      name: 'Bancos'
+    })
+    expect(normalizeRule({ name: 'B', enabled: true, action: 'archive', conditions, folder }, 'x')).not.toHaveProperty('folder')
+  })
+})
+
+describe('findMatchingRule with folders', () => {
+  const conditions = { from: 'shop.example', subject: '', body: '' }
+
+  it('still matches a local rule on any account', () => {
+    const r = rule({ conditions })
+    expect(findMatchingRule([r], { ...email, accountId: 'g2' })).toBe(r)
+  })
+
+  it('matches an old save rule without a folder on any account', () => {
+    const r = rule({ action: 'save', conditions })
+    expect(findMatchingRule([r], { ...email, accountId: 'g2' })).toBe(r)
+  })
+
+  it('matches a save rule only on the account its folder belongs to', () => {
+    const r = rule({ action: 'save', conditions, folder: { accountId: 'g1', id: 'Label_1', name: 'Tiendas' } })
+    const fallback = rule({ id: 'r2', action: 'archive', conditions })
+    expect(findMatchingRule([r, fallback], { ...email, accountId: 'g1' })).toBe(r)
+    expect(findMatchingRule([r, fallback], { ...email, accountId: 'g2' })).toBe(fallback)
+  })
+})
+
+describe('describeRuleAction', () => {
+  it('names the folder of a save rule and marks an old one without a folder as archive', () => {
+    expect(describeRuleAction(rule({ action: 'save', folder: { accountId: 'g1', id: 'L', name: 'Bancos' } }))).toBe(
+      'mover a la carpeta "Bancos"'
+    )
+    expect(describeRuleAction(rule({ action: 'save' }))).toBe('archivar (regla anterior sin carpeta)')
+    expect(describeRuleAction(rule({ action: 'archive' }))).toBe('archivar')
+    expect(describeRuleAction(rule({ action: 'delete' }))).toBe('mover a la papelera')
   })
 })
 

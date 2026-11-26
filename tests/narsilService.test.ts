@@ -4,7 +4,7 @@ import { AccountRegistry, type SecretStore } from '../src/main/app/accounts'
 import { parseMessage, type ParsedEmail } from '../src/main/domain/email'
 import type { AccountConnection, AddedAccount, ProviderAuth } from '../src/main/app/ports'
 import type { SecretName } from '../src/main/adapters/secureStore'
-import type { Account, Meeting, ProviderKind, Rule, Triage } from '@shared/types'
+import type { Account, AccountSettings, MailFolder, Meeting, ProviderKind, Rule, Triage } from '@shared/types'
 
 const fake = vi.hoisted(() => ({ triage: vi.fn<() => Promise<Triage>>() }))
 
@@ -62,7 +62,11 @@ function makeMailbox() {
     tokenCalls: 0,
     archive: vi.fn<(id: string) => Promise<void>>(async () => undefined),
     trash: vi.fn<(id: string) => Promise<void>>(async () => undefined),
-    save: vi.fn<(id: string) => Promise<void>>(async () => undefined),
+    moveToFolder: vi.fn<(id: string, folderId: string) => Promise<void>>(async () => undefined),
+    folders: [{ id: 'Label_1', name: 'Facturas' }] as MailFolder[],
+    createFolder: vi.fn<(name: string) => Promise<MailFolder>>(async (name) => ({ id: `new-${name}`, name })),
+    /** The settings each listUnread() call received. */
+    settingsSeen: [] as AccountSettings[],
     reply: vi.fn<(email: ParsedEmail, body: string) => Promise<void>>(async () => undefined)
   }
   return box
@@ -102,8 +106,9 @@ class FakeProvider implements ProviderAuth {
     if (!box) return null
     return {
       mail: {
-        listUnread: async () => {
+        listUnread: async (settings) => {
           box.listed++
+          box.settingsSeen.push(settings)
           const snapshot = [...box.ids]
           if (box.listGate) await box.listGate
           if (box.listError) throw box.listError
@@ -138,7 +143,9 @@ class FakeProvider implements ProviderAuth {
         },
         archive: (id) => box.archive(id),
         trash: (id) => box.trash(id),
-        save: (id) => box.save(id),
+        moveToFolder: (id, folderId) => box.moveToFolder(id, folderId),
+        listFolders: async () => box.folders,
+        createFolder: (name) => box.createFolder(name),
         reply: (email, body) => box.reply(email, body)
       },
       calendar: { upcoming: async () => box.meetings }
@@ -147,8 +154,9 @@ class FakeProvider implements ProviderAuth {
 }
 
 const TRIAGE: Triage = { summary: 's', recommendedAction: 'archive', reason: 'r', replies: [] }
-const ANA: Account = { id: 'g1', provider: 'google', email: 'ana@gmail.com' }
-const BETO: Account = { id: 'g2', provider: 'google', email: 'beto@gmail.com' }
+const DEFAULTS: AccountSettings = { includeCategories: false, windowDays: 2 }
+const ANA: Account = { id: 'g1', provider: 'google', email: 'ana@gmail.com', settings: DEFAULTS }
+const BETO: Account = { id: 'g2', provider: 'google', email: 'beto@gmail.com', settings: DEFAULTS }
 
 function memoryStore(initial: Record<string, string> = {}): SecretStore {
   const data = new Map<string, string>([['anthropic-key', 'test-key'], ...Object.entries(initial)])
@@ -370,7 +378,7 @@ describe('NarsilService with several accounts', () => {
 
     await service.addAccount('microsoft')
 
-    expect(registry.list()).toEqual([ANA, { id: 'm1', provider: 'microsoft', email: 'ana@outlook.com' }])
+    expect(registry.list()).toEqual([ANA, { id: 'm1', provider: 'microsoft', email: 'ana@outlook.com', settings: DEFAULTS }])
     expect(service.inboxItems().map((i) => i.key)).toEqual(['m1:x'])
   })
 
@@ -408,7 +416,7 @@ describe('NarsilService with several accounts', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined])
     expect(google.addAccount).toHaveBeenCalledTimes(1)
     expect(google.removeAccount).not.toHaveBeenCalled()
-    expect(registry.list()).toEqual([{ id: 'g9', provider: 'google', email: 'nueva@gmail.com' }])
+    expect(registry.list()).toEqual([{ id: 'g9', provider: 'google', email: 'nueva@gmail.com', settings: DEFAULTS }])
   })
 
   it('waits for the startup migration to finish before signing in a new account', async () => {
@@ -932,5 +940,169 @@ describe('NarsilService new-email notifications', () => {
     expect(fake.triage).toHaveBeenCalledTimes(1)
     expect(events.newEmails).toHaveBeenCalledTimes(1)
     expect(events.newEmails.mock.calls[0]?.[0]).toEqual([expect.objectContaining({ key: 'g1:b', triage: TRIAGE })])
+  })
+})
+
+describe('NarsilService folders', () => {
+  it('moves an email to a folder through the account that holds it and drops it from the list', async () => {
+    const { service, google } = await makeService({ accounts: [ANA, BETO] })
+    google.box('g1').ids = ['m1']
+    google.box('g2').ids = ['m1']
+    fake.triage.mockResolvedValue(TRIAGE)
+    await service.refresh()
+
+    await service.applyAction('g2:m1', 'save', 'Label_7')
+
+    expect(google.box('g2').moveToFolder).toHaveBeenCalledWith('m1', 'Label_7')
+    expect(google.box('g1').moveToFolder).not.toHaveBeenCalled()
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['g1:m1'])
+  })
+
+  it('rejects save without a folder and keeps the email listed', async () => {
+    const { service, google } = await makeService()
+    google.box('g1').ids = ['m1']
+    fake.triage.mockResolvedValue(TRIAGE)
+    await service.refresh()
+
+    await expect(service.applyAction('g1:m1', 'save')).rejects.toThrow('Elige una carpeta para guardar este correo.')
+    expect(google.box('g1').moveToFolder).not.toHaveBeenCalled()
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['g1:m1'])
+  })
+
+  it('lists and creates folders on the chosen account, trimming the name', async () => {
+    const { service, google } = await makeService({ accounts: [ANA, BETO] })
+    google.box('g2').folders = [{ id: 'Label_2', name: 'Viajes' }]
+
+    expect(await service.listFolders('g2')).toEqual([{ id: 'Label_2', name: 'Viajes' }])
+    expect(await service.createFolder('g2', '  Viajes/2026 ')).toEqual({ id: 'new-Viajes/2026', name: 'Viajes/2026' })
+    expect(google.box('g2').createFolder).toHaveBeenCalledWith('Viajes/2026')
+    expect(google.box('g1').createFolder).not.toHaveBeenCalled()
+  })
+
+  it('rejects a folder name that is empty or longer than 100 characters', async () => {
+    const { service, google } = await makeService()
+    const error = 'El nombre de la carpeta debe tener entre 1 y 100 caracteres.'
+    await expect(service.createFolder('g1', '   ')).rejects.toThrow(error)
+    await expect(service.createFolder('g1', 'x'.repeat(101))).rejects.toThrow(error)
+    expect(google.box('g1').createFolder).not.toHaveBeenCalled()
+  })
+
+  it('rejects folders of an account that is not connected', async () => {
+    const { service } = await makeService()
+    await expect(service.listFolders('nope')).rejects.toThrow('Esta cuenta ya no está conectada.')
+  })
+})
+
+describe('NarsilService inbox settings', () => {
+  it('lists each account with its own settings, the defaults when none were saved', async () => {
+    const wide: Account = { ...BETO, settings: { includeCategories: true, windowDays: 7 } }
+    const { service, google } = await makeService({ accounts: [ANA, wide] })
+
+    await service.refresh()
+
+    expect(google.box('g1').settingsSeen).toEqual([DEFAULTS])
+    expect(google.box('g2').settingsSeen).toEqual([{ includeCategories: true, windowDays: 7 }])
+  })
+
+  it('persists new settings and repolls only that account with them', async () => {
+    const { service, google, registry, events } = await makeService({ accounts: [ANA, BETO] })
+    await service.refresh()
+    google.box('g2').ids = ['promo']
+    fake.triage.mockResolvedValue(TRIAGE)
+    events.statusChanged.mockClear()
+    const settings: AccountSettings = { includeCategories: true, windowDays: 30 }
+
+    await service.setAccountSettings('g2', settings)
+
+    expect(registry.list().find((a) => a.id === 'g2')?.settings).toEqual(settings)
+    expect(registry.list().find((a) => a.id === 'g1')?.settings).toEqual(DEFAULTS)
+    expect(google.box('g1').listed).toBe(1)
+    expect(google.box('g2').listed).toBe(2)
+    expect(google.box('g2').settingsSeen.at(-1)).toEqual(settings)
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['g2:promo'])
+    expect(service.status().accounts.find((a) => a.id === 'g2')?.settings).toEqual(settings)
+    expect(events.statusChanged).toHaveBeenCalled()
+  })
+
+  it('repolls with the new settings after a poll of that account that was already running', async () => {
+    const { service, google } = await makeService()
+    const box = google.box('g1')
+    const gate = deferred<void>()
+    box.listGate = gate.promise
+    const running = service.refresh()
+    await settle()
+
+    const changing = service.setAccountSettings('g1', { includeCategories: true, windowDays: 2 })
+    box.listGate = null
+    gate.resolve()
+    await Promise.all([running, changing])
+
+    expect(box.settingsSeen).toEqual([DEFAULTS, { includeCategories: true, windowDays: 2 }])
+  })
+
+  it('rejects settings for an unknown account', async () => {
+    const { service } = await makeService()
+    await expect(service.setAccountSettings('nope', DEFAULTS)).rejects.toThrow('Esta cuenta ya no está conectada.')
+  })
+})
+
+describe('NarsilService save rules', () => {
+  const conditions = { from: 'banco.example', subject: '', body: '' }
+
+  it('archives with an old save rule that has no folder', async () => {
+    const legacy: Rule = { id: 'r1', name: 'Banco', enabled: true, action: 'save', conditions }
+    const { service, google } = await makeService({ repo: makeRepo([legacy]) })
+    const box = google.box('g1')
+    box.ids = ['b1']
+    box.senders.b1 = 'avisos@banco.example'
+
+    await service.refresh()
+
+    expect(box.archive).toHaveBeenCalledWith('b1')
+    expect(box.moveToFolder).not.toHaveBeenCalled()
+    expect(service.inboxItems()).toEqual([])
+    expect(service.ruleActivity()[0]).toMatchObject({ ruleName: 'Banco', action: 'archive' })
+  })
+
+  it('moves to the folder of a save rule on its own account and leaves other accounts alone', async () => {
+    const rule: Rule = {
+      id: 'r1',
+      name: 'Banco',
+      enabled: true,
+      action: 'save',
+      conditions,
+      folder: { accountId: 'g1', id: 'Label_1', name: 'Bancos' }
+    }
+    const { service, google } = await makeService({ accounts: [ANA, BETO], repo: makeRepo([rule]) })
+    google.box('g1').ids = ['b1']
+    google.box('g1').senders.b1 = 'avisos@banco.example'
+    google.box('g2').ids = ['b2']
+    google.box('g2').senders.b2 = 'avisos@banco.example'
+    fake.triage.mockResolvedValue(TRIAGE)
+
+    await service.refresh()
+
+    expect(google.box('g1').moveToFolder).toHaveBeenCalledWith('b1', 'Label_1')
+    expect(google.box('g2').moveToFolder).not.toHaveBeenCalled()
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['g2:b2'])
+    expect(service.ruleActivity()[0]).toMatchObject({ ruleName: 'Banco', action: 'save', folderName: 'Bancos' })
+  })
+
+  it('refuses to save a new save rule without a folder', async () => {
+    const repo = makeRepo()
+    const { service } = await makeService({ repo })
+    await expect(service.saveRule({ name: 'Banco', enabled: true, action: 'save', conditions })).rejects.toThrow(
+      'Elige la carpeta donde se guardan estos correos.'
+    )
+    expect(repo.save).not.toHaveBeenCalled()
+  })
+
+  it('still turns an old save rule without a folder on and off, keeping it as it was', async () => {
+    const legacy: Rule = { id: 'r1', name: 'Banco', enabled: true, action: 'save', conditions }
+    const { service } = await makeService({ repo: makeRepo([legacy]) })
+
+    await service.saveRule({ ...legacy, enabled: false })
+
+    expect(service.rules()).toEqual([{ ...legacy, enabled: false }])
   })
 })

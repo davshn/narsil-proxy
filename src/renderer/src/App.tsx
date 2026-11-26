@@ -108,8 +108,8 @@ export function App(): React.JSX.Element {
   }, [highlighted])
 
   const onAction = useCallback(
-    async (key: string, action: 'archive' | 'delete' | 'save') => {
-      const result = await window.narsil.applyAction(key, action)
+    async (key: string, action: 'archive' | 'delete' | 'save', folderId?: string) => {
+      const result = await window.narsil.applyAction(key, action, folderId)
       if (result.ok) celebrate()
       return result.ok ? null : (result.error ?? 'La acción falló.')
     },
@@ -215,7 +215,13 @@ export function App(): React.JSX.Element {
         {tab === 'setup' && <Setup status={status} />}
         {tab === 'meetings' && <Meetings meetings={meetings} accountLabel={accountLabel} />}
         {tab === 'rules' && (
-          <Rules rules={rules} activity={activity} incomingDraft={ruleDraft} onDraftTaken={takeRuleDraft} />
+          <Rules
+            rules={rules}
+            activity={activity}
+            accounts={status.accounts}
+            incomingDraft={ruleDraft}
+            onDraftTaken={takeRuleDraft}
+          />
         )}
         {tab === 'mail' &&
           (!isReady(status) ? (
@@ -226,7 +232,7 @@ export function App(): React.JSX.Element {
               </button>
             </p>
           ) : inbox.length === 0 ? (
-            <p className="empty">No tienes correos sin leer de los últimos dos días.</p>
+            <p className="empty">No tienes correos sin leer en el periodo que revisa Narsil. Puedes ampliarlo en Ajustes.</p>
           ) : (
             inbox.map((item) => (
               <EmailCard

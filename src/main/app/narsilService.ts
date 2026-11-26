@@ -1,18 +1,19 @@
 import { randomUUID } from 'node:crypto'
 import type {
   Account,
+  AccountSettings,
   AppStatus,
   EmailAction,
   InboxItem,
+  MailFolder,
   Meeting,
   ProviderKind,
   ReminderAlert,
   Rule,
-  RuleAction,
   RuleActivity,
   RuleInput
 } from '@shared/types'
-import { findMatchingRule, normalizeRule } from '@shared/rules'
+import { findMatchingRule, normalizeFolderName, normalizeRule } from '@shared/rules'
 import type { ParsedEmail } from '../domain/email'
 import type { RulesRepository } from '../adapters/rulesStore'
 import { dueReminders } from '../domain/reminders'
@@ -119,6 +120,8 @@ export class NarsilService {
    * the account id, so a poll of a removed account never blocks or unblocks its re-added successor.
    */
   private readonly inboxBusy = new Set<Connected>()
+  /** The inbox poll in flight per connection, so a settings change can wait for it. */
+  private readonly inboxRuns = new Map<Connected, Promise<void>>()
   private readonly changeChecking = new Set<Connected>()
   /** The change token each account had when its inbox was last listed and fully read. */
   private readonly changeTokens = new Map<string, string>()
@@ -221,8 +224,10 @@ export class NarsilService {
 
   /** Creates or updates a rule, persists it, then applies it to the emails already listed. */
   async saveRule(input: RuleInput): Promise<void> {
-    const id = input.id && this.ruleList.some((r) => r.id === input.id) ? input.id : randomUUID()
-    const rule = normalizeRule(input, id)
+    const previous = input.id ? this.ruleList.find((r) => r.id === input.id) : undefined
+    const id = previous?.id ?? randomUUID()
+    // An old save rule without a folder can still be renamed or toggled; it keeps archiving.
+    const rule = normalizeRule(input, id, previous?.action === 'save' && !previous.folder)
     const exists = this.ruleList.some((r) => r.id === id)
     this.setRules(exists ? this.ruleList.map((r) => (r.id === id ? rule : r)) : [...this.ruleList, rule])
     await this.applyRulesToInbox()
@@ -309,10 +314,47 @@ export class NarsilService {
     this.emitStatus()
   }
 
-  async applyAction(key: string, action: Exclude<EmailAction, 'reply'>): Promise<void> {
+  /** Acts on an email from the account that received it; `save` moves it to `folderId`. */
+  async applyAction(key: string, action: Exclude<EmailAction, 'reply'>, folderId?: string): Promise<void> {
     const { tracked, mail } = this.requireTracked(key)
-    await this.perform(mail, tracked.parsed.summary.id, action)
+    const id = tracked.parsed.summary.id
+    if (action === 'archive') await mail.archive(id)
+    else if (action === 'delete') await mail.trash(id)
+    else {
+      if (!folderId) throw new Error('Elige una carpeta para guardar este correo.')
+      await mail.moveToFolder(id, folderId)
+    }
     this.removeFromInbox(key)
+  }
+
+  /** The folders of one connected account, for "Guardar" and save rules. */
+  async listFolders(accountId: string): Promise<MailFolder[]> {
+    return this.requireConnected(accountId).connection.mail.listFolders()
+  }
+
+  async createFolder(accountId: string, name: string): Promise<MailFolder> {
+    const valid = normalizeFolderName(name)
+    return this.requireConnected(accountId).connection.mail.createFolder(valid)
+  }
+
+  /** Saves an account's inbox settings, then lists that account's inbox again with them. */
+  async setAccountSettings(accountId: string, settings: AccountSettings): Promise<void> {
+    const account = this.accounts.setSettings(accountId, settings)
+    this.emitStatus()
+    const connected = this.connections.get(accountId)
+    if (!connected) return
+    connected.account = account
+    // A poll already running uses the old settings: wait for it, then list again.
+    await this.inboxRuns.get(connected)
+    if (!this.isLive(connected)) return
+    this.changeTokens.delete(accountId)
+    await this.pollAccountInbox(connected)
+  }
+
+  private requireConnected(accountId: string): Connected {
+    const connected = this.connections.get(accountId)
+    if (!connected) throw new Error('Esta cuenta ya no está conectada.')
+    return connected
   }
 
   /** Replies from the account that received the email. */
@@ -398,10 +440,11 @@ export class NarsilService {
     return this.connections.get(connected.account.id) === connected
   }
 
-  private async perform(mail: MailProvider, messageId: string, action: RuleAction): Promise<void> {
-    if (action === 'archive') await mail.archive(messageId)
-    else if (action === 'delete') await mail.trash(messageId)
-    else await mail.save(messageId)
+  /** Runs a rule's action. A save rule moves to its folder; an old one without a folder archives. */
+  private async performRule(mail: MailProvider, messageId: string, rule: Rule): Promise<void> {
+    if (rule.action === 'delete') await mail.trash(messageId)
+    else if (rule.action === 'save' && rule.folder) await mail.moveToFolder(messageId, rule.folder.id)
+    else await mail.archive(messageId)
   }
 
   private setRules(rules: Rule[]): void {
@@ -415,20 +458,22 @@ export class NarsilService {
     const rule = findMatchingRule(this.ruleList, {
       from: parsed.summary.from,
       subject: parsed.summary.subject,
-      body: parsed.bodyText || parsed.summary.snippet
+      body: parsed.bodyText || parsed.summary.snippet,
+      accountId: parsed.summary.accountId
     })
     if (!rule) return false
     const entry: RuleActivity = {
       id: randomUUID(),
       ruleName: rule.name,
-      action: rule.action,
+      action: rule.action === 'save' && !rule.folder ? 'archive' : rule.action,
+      ...(rule.action === 'save' && rule.folder ? { folderName: rule.folder.name } : {}),
       from: parsed.summary.from,
       subject: parsed.summary.subject,
       at: new Date().toISOString()
     }
     let handled = true
     try {
-      await this.perform(mail, parsed.summary.id, rule.action)
+      await this.performRule(mail, parsed.summary.id, rule)
     } catch (error) {
       entry.error = message(error)
       handled = false
@@ -492,9 +537,17 @@ export class NarsilService {
    * Lists one account's inbox, applies rules, triages new emails and announces the ones that
    * arrived since the previous poll. `knownToken` is the change token the caller just read.
    */
-  private async pollAccountInbox(connected: Connected, knownToken?: string): Promise<void> {
+  private pollAccountInbox(connected: Connected, knownToken?: string): Promise<void> {
+    if (this.inboxBusy.has(connected)) return Promise.resolve()
+    const run: Promise<void> = this.runAccountInboxPoll(connected, knownToken).finally(() => {
+      if (this.inboxRuns.get(connected) === run) this.inboxRuns.delete(connected)
+    })
+    this.inboxRuns.set(connected, run)
+    return run
+  }
+
+  private async runAccountInboxPoll(connected: Connected, knownToken?: string): Promise<void> {
     const { account, connection } = connected
-    if (this.inboxBusy.has(connected)) return
     this.inboxBusy.add(connected)
     const source = `${account.id}:mail`
     try {
@@ -509,7 +562,7 @@ export class NarsilService {
         }
       }
       const listedAt = Date.now()
-      const ids = await connection.mail.listUnread()
+      const ids = await connection.mail.listUnread(account.settings)
       if (!this.isLive(connected)) return
       // Mail received before the account's first load was there before Narsil; only later mail is news.
       // The list holds a limited window, so this is judged by when an email arrived, not by

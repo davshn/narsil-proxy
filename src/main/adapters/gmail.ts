@@ -1,11 +1,16 @@
 import { gmail, type gmail_v1 } from '@googleapis/gmail'
 import type { OAuth2Client } from 'google-auth-library'
+import type { AccountSettings, MailFolder } from '@shared/types'
 import { buildReplyRaw, parseMessage, type ParsedEmail } from '../domain/email'
 import type { MailProvider } from '../app/ports'
 
-/** Unread inbox mail from the last two days, excluding Gmail's promotions and social tabs. */
-const INBOX_QUERY = 'in:inbox is:unread newer_than:2d -category:promotions -category:social'
 const MAX_MESSAGES = 20
+
+/** Unread inbox mail of the window, skipping the Promotions and Social tabs unless included. */
+export function inboxQuery(settings: AccountSettings): string {
+  const query = `in:inbox is:unread newer_than:${settings.windowDays}d`
+  return settings.includeCategories ? query : `${query} -category:promotions -category:social`
+}
 
 /** The address of the signed-in mailbox. Gmail's own scopes allow it, so no extra scope is needed. */
 export async function fetchProfileEmail(auth: OAuth2Client): Promise<string> {
@@ -26,8 +31,8 @@ export class GmailService implements MailProvider {
     this.api = gmail({ version: 'v1', auth })
   }
 
-  async listUnread(): Promise<string[]> {
-    const res = await this.api.users.messages.list({ userId: 'me', q: INBOX_QUERY, maxResults: MAX_MESSAGES })
+  async listUnread(settings: AccountSettings): Promise<string[]> {
+    const res = await this.api.users.messages.list({ userId: 'me', q: inboxQuery(settings), maxResults: MAX_MESSAGES })
     return (res.data.messages ?? []).flatMap((m) => (m.id ? [m.id] : []))
   }
 
@@ -54,9 +59,27 @@ export class GmailService implements MailProvider {
     await this.api.users.messages.trash({ userId: 'me', id })
   }
 
-  /** Stars the message and marks it read, keeping it in the inbox. */
-  async save(id: string): Promise<void> {
-    await this.modify(id, ['STARRED'], ['UNREAD'])
+  /** The user's own labels, sorted by name; system labels and category tabs are left out. */
+  async listFolders(): Promise<MailFolder[]> {
+    const res = await this.api.users.labels.list({ userId: 'me' })
+    return (res.data.labels ?? [])
+      .flatMap((label) => (label.type === 'user' && label.id && label.name ? [{ id: label.id, name: label.name }] : []))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  /** A label shown in the label list and on messages; `A/B` makes B a nested label of A. */
+  async createFolder(name: string): Promise<MailFolder> {
+    const res = await this.api.users.labels.create({
+      userId: 'me',
+      requestBody: { name, labelListVisibility: 'labelShow', messageListVisibility: 'show' }
+    })
+    if (!res.data.id) throw new Error('Google no devolvió la etiqueta creada.')
+    return { id: res.data.id, name: res.data.name ?? name }
+  }
+
+  /** Adds the label and removes the message from the inbox, marking it read. */
+  async moveToFolder(id: string, folderId: string): Promise<void> {
+    await this.modify(id, [folderId], ['INBOX', 'UNREAD'])
   }
 
   async reply(email: ParsedEmail, body: string): Promise<void> {

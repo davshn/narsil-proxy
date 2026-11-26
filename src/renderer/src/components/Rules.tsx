@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react'
-import type { Rule, RuleAction, RuleActivity, RuleInput } from '@shared/types'
-import { describeConditions } from '@shared/rules'
+import type { Account, Rule, RuleAction, RuleActivity, RuleInput } from '@shared/types'
+import { describeConditions, describeRuleAction } from '@shared/rules'
+import { FolderPicker } from './FolderPicker'
 
 const ACTION_LABEL: Record<RuleAction, string> = {
+  save: 'Mover a carpeta',
   archive: 'Archivar',
-  delete: 'Eliminar (a la papelera)',
-  save: 'Guardar'
+  delete: 'Eliminar (a la papelera)'
 }
 
-const DONE: Record<RuleAction, string> = { archive: 'archivó', delete: 'movió a la papelera', save: 'guardó' }
-const FAILED: Record<RuleAction, string> = {
-  archive: 'no pudo archivar',
-  delete: 'no pudo mover a la papelera',
-  save: 'no pudo guardar'
+function done(entry: RuleActivity): string {
+  if (entry.action === 'archive') return 'archivó'
+  if (entry.action === 'delete') return 'movió a la papelera'
+  return entry.folderName ? `movió a "${entry.folderName}"` : 'movió a una carpeta'
+}
+
+function failed(entry: RuleActivity): string {
+  if (entry.action === 'archive') return 'no pudo archivar'
+  if (entry.action === 'delete') return 'no pudo mover a la papelera'
+  return entry.folderName ? `no pudo mover a "${entry.folderName}"` : 'no pudo mover a una carpeta'
 }
 
 const EMPTY: RuleInput = {
@@ -25,12 +31,14 @@ const EMPTY: RuleInput = {
 interface RulesProps {
   rules: Rule[]
   activity: RuleActivity[]
+  /** Connected accounts; a "Mover a carpeta" rule uses a folder of one of them. */
+  accounts: Account[]
   /** A draft handed over from an email card; opens the form prefilled. */
   incomingDraft: RuleInput | null
   onDraftTaken(): void
 }
 
-export function Rules({ rules, activity, incomingDraft, onDraftTaken }: RulesProps): React.JSX.Element {
+export function Rules({ rules, activity, accounts, incomingDraft, onDraftTaken }: RulesProps): React.JSX.Element {
   const [draft, setDraft] = useState<RuleInput | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -46,7 +54,9 @@ export function Rules({ rules, activity, incomingDraft, onDraftTaken }: RulesPro
   async function save(input: RuleInput): Promise<boolean> {
     setBusy(true)
     setError(null)
-    const result = await window.narsil.saveRule(input)
+    // An account was chosen but no folder yet: leave it out so the main process explains what is missing.
+    const { folder, ...withoutFolder } = input
+    const result = await window.narsil.saveRule(folder?.id ? input : withoutFolder)
     setBusy(false)
     if (!result.ok) setError(result.error ?? 'No se pudo guardar la regla.')
     return result.ok
@@ -54,6 +64,10 @@ export function Rules({ rules, activity, incomingDraft, onDraftTaken }: RulesPro
 
   const setCondition = (field: keyof RuleInput['conditions'], value: string): void =>
     setDraft((d) => (d ? { ...d, conditions: { ...d.conditions, [field]: value } } : d))
+
+  const accountEmail = (accountId: string): string | undefined => accounts.find((a) => a.id === accountId)?.email
+  /** The account whose folders the form lists: the chosen folder's, or the first account. */
+  const folderAccountId = draft?.folder?.accountId ?? accounts[0]?.id
 
   return (
     <section className="rules" aria-label="Reglas">
@@ -95,6 +109,45 @@ export function Rules({ rules, activity, incomingDraft, onDraftTaken }: RulesPro
               ))}
             </select>
           </label>
+          {draft.action === 'save' &&
+            (folderAccountId === undefined ? (
+              <p className="rule-form__hint">Conecta una cuenta para elegir una carpeta.</p>
+            ) : (
+              <>
+                {accounts.length > 1 && (
+                  <label>
+                    Cuenta
+                    <select
+                      value={folderAccountId}
+                      // Folders belong to one mailbox: choose again in the new account.
+                      onChange={(e) => setDraft({ ...draft, folder: { accountId: e.target.value, id: '', name: '' } })}
+                    >
+                      {accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.email}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <div className="rule-form__folder">
+                  <span>
+                    Carpeta{draft.folder?.id ? `: ${draft.folder.name}` : ''}
+                  </span>
+                  <FolderPicker
+                    accountId={folderAccountId}
+                    selectedId={draft.folder?.id}
+                    busy={busy}
+                    onPick={(folder) =>
+                      setDraft({ ...draft, folder: { accountId: folderAccountId, id: folder.id, name: folder.name } })
+                    }
+                  />
+                </div>
+                <p className="rule-form__hint">
+                  Solo actúa sobre los correos de {accountEmail(folderAccountId) ?? 'esa cuenta'}.
+                </p>
+              </>
+            ))}
           {error && (
             <p className="rules__error" role="alert">
               {error}
@@ -130,7 +183,8 @@ export function Rules({ rules, activity, incomingDraft, onDraftTaken }: RulesPro
               <div className="rule__text">
                 <span className="rule__name">{rule.name}</span>
                 <span className="rule__when">
-                  {describeConditions(rule.conditions)}: {ACTION_LABEL[rule.action].toLowerCase()}
+                  {describeConditions(rule.conditions)}: {describeRuleAction(rule)}
+                  {rule.action === 'save' && rule.folder && accounts.length > 1 && ` (${accountEmail(rule.folder.accountId) ?? 'cuenta quitada'})`}
                 </span>
               </div>
               <div className="rule__controls">
@@ -164,7 +218,7 @@ export function Rules({ rules, activity, incomingDraft, onDraftTaken }: RulesPro
                   {new Date(entry.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </time>
                 <span>
-                  <strong>{entry.ruleName}</strong> {entry.error ? FAILED[entry.action] : DONE[entry.action]} “{entry.subject}”
+                  <strong>{entry.ruleName}</strong> {entry.error ? failed(entry) : done(entry)} “{entry.subject}”
                   {entry.error && <span className="activity__error">: {entry.error}</span>}
                 </span>
               </li>

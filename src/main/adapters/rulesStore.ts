@@ -14,7 +14,8 @@ const RuleSchema = z.object({
   name: z.string(),
   enabled: z.boolean(),
   action: z.enum(['archive', 'delete', 'save']),
-  conditions: z.object({ from: z.string(), subject: z.string(), body: z.string() })
+  conditions: z.object({ from: z.string(), subject: z.string(), body: z.string() }),
+  folder: z.object({ accountId: z.string().min(1), id: z.string().min(1), name: z.string() }).optional()
 })
 
 /** Rules are not secret, so they live as plain JSON in the app's userData folder. */
