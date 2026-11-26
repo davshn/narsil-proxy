@@ -223,6 +223,32 @@ export interface ActionResult {
   error?: string
 }
 
+/** A to-do the user wrote down in "Pendientes". Stored locally; never sent anywhere. */
+export interface PendingTask {
+  id: string
+  name: string
+  /** May be empty. */
+  description: string
+  /** The project it belongs to; empty when it has none. */
+  project: string
+  done: boolean
+  /** ISO 8601 timestamp. */
+  createdAt: string
+}
+
+/** A new task, or the edit of task `id`. Fields are trimmed; only the name is required. */
+export interface PendingTaskInput {
+  id?: string
+  name: string
+  description: string
+  project: string
+}
+
+/** Every task after the call, also when it failed, so the list always shows what is stored. */
+export interface TasksResult extends ActionResult {
+  tasks: PendingTask[]
+}
+
 export interface FoldersResult extends ActionResult {
   folders?: MailFolder[]
 }
@@ -270,6 +296,11 @@ export interface NarsilApi {
   convertLocalRule(ruleId: string, target?: ConvertTarget): Promise<ActionResult>
   /** Signs in again to the same account to grant the rule and calendar write permissions. */
   reconnectAccount(accountId: string): Promise<ActionResult>
+  getTasks(): Promise<TasksResult>
+  /** Adds a task, or edits task `input.id`. The name must not be blank. */
+  saveTask(input: PendingTaskInput): Promise<TasksResult>
+  setTaskDone(id: string, done: boolean): Promise<TasksResult>
+  deleteTask(id: string): Promise<TasksResult>
   onServerRulesChanged(listener: (rules: AccountRules[]) => void): () => void
   onRulesChanged(listener: (rules: Rule[]) => void): () => void
   onRuleActivityChanged(listener: (activity: RuleActivity[]) => void): () => void
@@ -308,6 +339,10 @@ export const IPC = {
   deleteServerRule: 'narsil:delete-server-rule',
   convertLocalRule: 'narsil:convert-local-rule',
   reconnectAccount: 'narsil:reconnect-account',
+  getTasks: 'narsil:get-tasks',
+  saveTask: 'narsil:save-task',
+  setTaskDone: 'narsil:set-task-done',
+  deleteTask: 'narsil:delete-task',
   serverRulesChanged: 'narsil:server-rules-changed',
   rulesChanged: 'narsil:rules-changed',
   ruleActivityChanged: 'narsil:rule-activity-changed',

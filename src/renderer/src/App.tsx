@@ -1,14 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AccountRules, AppStatus, InboxItem, Meeting, ReminderAlert, Rule, RuleActivity, ServerRuleInput } from '@shared/types'
+import type {
+  AccountRules,
+  AppStatus,
+  InboxItem,
+  Meeting,
+  PendingTask,
+  ReminderAlert,
+  Rule,
+  RuleActivity,
+  ServerRuleInput,
+  TasksResult
+} from '@shared/types'
 import { serverRuleDraftFromEmail } from '@shared/rules'
 import { NarsilPet, Water, petPose } from './components/NarsilPet'
 import { EmailCard } from './components/EmailCard'
 import { Meetings } from './components/Meetings'
 import { Setup } from './components/Setup'
 import { Rules } from './components/Rules'
+import { Tasks } from './components/Tasks'
 import { useDayNightTheme } from './theme'
 
-type Tab = 'mail' | 'meetings' | 'rules' | 'setup'
+type Tab = 'mail' | 'meetings' | 'tasks' | 'rules' | 'setup'
 
 /** How long Narsil shows her "done" pose after an action or reply succeeds. */
 const CELEBRATE_MS = 3000
@@ -39,6 +51,13 @@ export function App(): React.JSX.Element {
   const [highlighted, setHighlighted] = useState<string | null>(null)
   const [celebrating, setCelebrating] = useState(false)
   const celebrateTimer = useRef<number | null>(null)
+  const [tasks, setTasks] = useState<PendingTask[]>([])
+  const [tasksError, setTasksError] = useState<string | null>(null)
+  const takeTasks = useCallback((result: TasksResult) => {
+    setTasks(result.tasks)
+    if (result.ok) setTasksError(null)
+  }, [])
+  const pendingTasks = tasks.filter((t) => !t.done).length
 
   /** Shows the "done" pose for a few seconds; a new success restarts the clock. */
   const celebrate = useCallback(() => {
@@ -68,6 +87,10 @@ export function App(): React.JSX.Element {
       if (!isReady(s)) setTab('setup')
     })
     void window.narsil.getInbox().then(setInbox)
+    void window.narsil.getTasks().then((result) => {
+      setTasks(result.tasks)
+      setTasksError(result.ok ? null : (result.error ?? null))
+    })
     void window.narsil.getMeetings().then(setMeetings)
     void window.narsil.getRules().then(setRules)
     void window.narsil.getRuleActivity().then(setActivity)
@@ -177,6 +200,9 @@ export function App(): React.JSX.Element {
           <button type="button" className="tab" aria-pressed={tab === 'meetings'} onClick={() => setTab('meetings')}>
             Reuniones
           </button>
+          <button type="button" className="tab" aria-pressed={tab === 'tasks'} onClick={() => setTab('tasks')}>
+            Pendientes{pendingTasks > 0 ? ` ${pendingTasks}` : ''}
+          </button>
           <button type="button" className="tab" aria-pressed={tab === 'rules'} onClick={() => setTab('rules')}>
             Reglas
           </button>
@@ -218,6 +244,12 @@ export function App(): React.JSX.Element {
         {tab === 'setup' && <Setup status={status} />}
         {tab === 'meetings' && (
           <Meetings meetings={meetings} accounts={status.accounts} accountLabel={accountLabel} onCreated={celebrate} />
+        )}
+        {tab === 'tasks' && (
+          <>
+            {tasksError && <p className="panel__error">{tasksError}</p>}
+            <Tasks tasks={tasks} onResult={takeTasks} />
+          </>
         )}
         {tab === 'rules' && (
           <Rules

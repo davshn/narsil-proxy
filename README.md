@@ -144,6 +144,18 @@ The **Reuniones** (meetings) tab lists the timed meetings of the next 24 hours f
 
 **Agregar** (add) creates the meeting in that calendar, then Narsil reads the calendar again so it shows in the list and gets its reminders. Problems show under the form in Spanish. An account that still has the old read-only calendar permission shows **Reconectar** there instead.
 
+### Pendientes
+
+The **Pendientes** (to-dos) tab keeps the tasks you jot down. Each task has:
+
+- **Nombre** (name): required.
+- **Proyecto** (project): optional. The field suggests the projects you already used.
+- **Descripción** (description): optional.
+
+Tasks are grouped by project, ignoring case, and tasks without a project come last. Inside a group, pending tasks come first, newest first. You can mark a task done, edit it or delete it; deleting asks once more. When there is more than one group, a selector shows a single project. The tab label shows how many tasks are still pending.
+
+Tasks are stored on this computer only, as plain JSON in `%APPDATA%\narsil-proxy\tasks.json`. They are never sent to Claude or to your mail accounts.
+
 ### Inbox settings
 
 **Ajustes → Cuentas** (settings, accounts) has two settings for each account:
@@ -210,6 +222,7 @@ src/
     app/ports.ts           The provider port every account type implements
     app/accounts.ts        The account list and the legacy Google account migration
     app/narsilService.ts   Polling every account, triage queue, rules and reminder scheduling
+    app/tasks.ts           The Pendientes list and its validation
     index.ts               Window, tray, notifications and validated IPC handlers
   preload/index.ts         The narrow `window.narsil` bridge
   renderer/                React UI

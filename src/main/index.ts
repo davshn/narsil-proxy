@@ -10,12 +10,16 @@ import {
   type EmailAction,
   type FolderResult,
   type FoldersResult,
-  type InboxItem
+  type InboxItem,
+  type PendingTask,
+  type TasksResult
 } from '@shared/types'
 import { SecureStore } from './adapters/secureStore'
 import { MAX_MEETING_LOCATION, MAX_MEETING_TITLE, NarsilService, type NarsilEvents } from './app/narsilService'
 import { AccountRegistry, AccountSettingsSchema, migrateLegacyGoogleTokens } from './app/accounts'
 import { RulesFileStore } from './adapters/rulesStore'
+import { TasksFileStore } from './adapters/tasksStore'
+import { MAX_TASK_DESCRIPTION, MAX_TASK_NAME, MAX_TASK_PROJECT, TaskList } from './app/tasks'
 import { GoogleProvider } from './adapters/google/provider'
 import { MicrosoftProvider } from './adapters/microsoft/provider'
 
@@ -322,6 +326,39 @@ function registerIpc(svc: NarsilService): void {
   })
 }
 
+/** Lengths are checked by TaskList; these only bound what crosses the IPC boundary. */
+const TaskId = z.string().min(1).max(64)
+const PendingTaskInputSchema = z.object({
+  id: TaskId.optional(),
+  name: z.string().max(MAX_TASK_NAME * 2),
+  description: z.string().max(MAX_TASK_DESCRIPTION * 2),
+  project: z.string().max(MAX_TASK_PROJECT * 2)
+})
+
+/** Runs a change and answers with every task, the stored ones when the change failed. */
+function taskResult(tasks: TaskList, change: () => PendingTask[]): TasksResult {
+  try {
+    return { ok: true, tasks: change() }
+  } catch (error) {
+    let current: PendingTask[] = []
+    try {
+      current = tasks.list()
+    } catch {
+      // A damaged file: the error above already says so.
+    }
+    return { ...failure(error), tasks: current }
+  }
+}
+
+function registerTaskIpc(tasks: TaskList): void {
+  ipcMain.handle(IPC.getTasks, () => taskResult(tasks, () => tasks.list()))
+  ipcMain.handle(IPC.saveTask, (_e, input: unknown) => taskResult(tasks, () => tasks.save(PendingTaskInputSchema.parse(input))))
+  ipcMain.handle(IPC.setTaskDone, (_e, id: unknown, done: unknown) =>
+    taskResult(tasks, () => tasks.setDone(TaskId.parse(id), z.boolean().parse(done)))
+  )
+  ipcMain.handle(IPC.deleteTask, (_e, id: unknown) => taskResult(tasks, () => tasks.remove(TaskId.parse(id))))
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -365,6 +402,7 @@ if (!app.requestSingleInstanceLock()) {
       }
     })
     registerIpc(service)
+    registerTaskIpc(new TaskList(new TasksFileStore()))
     service.start()
   })
 
