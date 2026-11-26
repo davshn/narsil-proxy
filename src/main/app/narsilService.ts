@@ -18,9 +18,14 @@ export interface NarsilEvents {
   statusChanged(status: AppStatus): void
 }
 
+/** A failed triage is retried on later polls up to this many attempts in total. */
+const MAX_TRIAGE_ATTEMPTS = 3
+
 interface Tracked {
   parsed: ParsedEmail
   item: InboxItem
+  attempts: number
+  triaging: boolean
 }
 
 /** Application core: polls Gmail and Calendar, triages mail with Claude and fires reminders. */
@@ -109,9 +114,12 @@ export class NarsilService {
     const trimmed = key.trim()
     if (trimmed) this.store.set('anthropic-key', trimmed)
     else this.store.delete('anthropic-key')
-    // Re-triage anything that failed for lack of a key.
+    // A new key gets a fresh set of attempts for anything not yet triaged.
     for (const tracked of this.inbox.values()) {
-      if (!tracked.item.triage) void this.triage(tracked)
+      if (!tracked.item.triage) {
+        tracked.attempts = 0
+        void this.triage(tracked)
+      }
     }
     this.emitStatus()
   }
@@ -162,18 +170,24 @@ export class NarsilService {
           changed = true
         }
       }
-      const fresh: Tracked[] = []
+      let unreadable = 0
       for (const id of ids) {
         if (this.inbox.has(id)) continue
-        const parsed = await this.gmail.getMessage(id)
-        const tracked: Tracked = { parsed, item: { email: parsed.summary, triage: null } }
-        this.inbox.set(id, tracked)
-        fresh.push(tracked)
-        changed = true
+        try {
+          const parsed = await this.gmail.getMessage(id)
+          this.inbox.set(id, { parsed, item: { email: parsed.summary, triage: null }, attempts: 0, triaging: false })
+          changed = true
+        } catch {
+          // One unreadable message must not block the rest; it is retried on the next poll.
+          unreadable++
+        }
       }
       if (changed) this.emitInbox()
-      for (const tracked of fresh) await this.triage(tracked)
-      this.clearError()
+      for (const tracked of [...this.inbox.values()]) {
+        if (!tracked.item.triage && tracked.attempts < MAX_TRIAGE_ATTEMPTS) await this.triage(tracked)
+      }
+      if (unreadable > 0) this.setError(`Gmail: could not read ${unreadable} email(s); retrying next check.`)
+      else this.clearError()
     } catch (error) {
       this.setError(`Gmail: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
@@ -182,17 +196,22 @@ export class NarsilService {
   }
 
   private async triage(tracked: Tracked): Promise<void> {
+    if (tracked.triaging) return
     const key = this.anthropicKey()
     if (!key) {
       tracked.item = { ...tracked.item, triageError: 'Add your Anthropic API key to get suggestions.' }
       this.emitInbox()
       return
     }
+    tracked.triaging = true
+    tracked.attempts++
     try {
       const triage = await new ClaudeTriage(key).triage(tracked.parsed)
       tracked.item = { email: tracked.item.email, triage }
     } catch (error) {
       tracked.item = { email: tracked.item.email, triage: null, triageError: describeClaudeError(error) }
+    } finally {
+      tracked.triaging = false
     }
     if (this.inbox.has(tracked.item.email.id)) this.emitInbox()
   }

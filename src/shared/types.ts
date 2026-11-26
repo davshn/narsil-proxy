@@ -6,6 +6,8 @@ export interface EmailSummary {
   id: string
   threadId: string
   from: string
+  /** Where a reply goes: the Reply-To header when present, otherwise From. */
+  replyTo: string
   subject: string
   snippet: string
   /** ISO 8601 timestamp. */

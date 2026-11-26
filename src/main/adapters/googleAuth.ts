@@ -34,6 +34,7 @@ export function parseClientFile(json: string): ClientConfig {
 
 export class GoogleAuth {
   private client: OAuth2Client | null = null
+  private pending: Promise<void> | null = null
 
   constructor(private readonly store: SecureStore) {}
 
@@ -62,7 +63,15 @@ export class GoogleAuth {
   }
 
   /** Runs the OAuth loopback flow with PKCE in the user's default browser. */
-  async connect(): Promise<void> {
+  connect(): Promise<void> {
+    // A second click while the browser is open joins the sign-in already in progress.
+    this.pending ??= this.runConnect().finally(() => {
+      this.pending = null
+    })
+    return this.pending
+  }
+
+  private async runConnect(): Promise<void> {
     const client = this.getClient()
     if (!client) throw new Error('Import your Google OAuth client file first.')
 
@@ -83,7 +92,7 @@ export class GoogleAuth {
           code_challenge_method: CodeChallengeMethod.S256,
           ...(codeChallenge ? { code_challenge: codeChallenge } : {})
         })
-        void shell.openExternal(url)
+        return shell.openExternal(url)
       })
       const { tokens } = await client.getToken({ code, codeVerifier, redirect_uri: redirectUri })
       this.store.set('google-tokens', JSON.stringify(tokens))
@@ -100,6 +109,9 @@ export class GoogleAuth {
     } catch {
       // The token may already be invalid; removing it locally is what matters.
     }
+    // Drop the client so a refresh finishing now cannot write tokens back.
+    this.client?.removeAllListeners('tokens')
+    this.client = null
     this.store.delete('google-tokens')
   }
 
@@ -119,29 +131,35 @@ export class GoogleAuth {
     return client
   }
 
-  private waitForCode(server: Server, state: string, openBrowser: () => void): Promise<string> {
+  private waitForCode(server: Server, state: string, openBrowser: () => Promise<void>): Promise<string> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Google sign-in timed out.')), LOGIN_TIMEOUT_MS)
+      const fail = (error: Error): void => {
+        clearTimeout(timer)
+        reject(error)
+      }
       server.on('request', (req, res) => {
         const url = new URL(req.url ?? '/', 'http://127.0.0.1')
-        const code = url.searchParams.get('code')
-        const error = url.searchParams.get('error')
-        if (!code && !error) {
+        // Requests without our state did not come from Google's redirect: ignore them.
+        if (url.searchParams.get('state') !== state) {
           res.writeHead(404).end()
           return
         }
+        const code = url.searchParams.get('code')
+        const error = url.searchParams.get('error')
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        if (error || url.searchParams.get('state') !== state || !code) {
+        if (error || !code) {
           res.end('<h2>Narsil could not connect to Google.</h2><p>You can close this tab.</p>')
-          clearTimeout(timer)
-          reject(new Error(error ? `Google sign-in failed: ${error}` : 'Google sign-in failed: state mismatch.'))
+          fail(new Error(`Google sign-in failed: ${error ?? 'no authorization code'}`))
           return
         }
         res.end('<h2>Narsil is connected to Google.</h2><p>You can close this tab.</p>')
         clearTimeout(timer)
         resolve(code)
       })
-      openBrowser()
+      openBrowser().catch((error: unknown) =>
+        fail(new Error(`Could not open your browser: ${error instanceof Error ? error.message : String(error)}`))
+      )
     })
   }
 }

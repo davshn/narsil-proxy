@@ -518,3 +518,15 @@ textarea {
   border-radius: 4px;
   background: rgb(78 111 148 / 0.35);
 }
+
+.mail__to {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.mail__to--warn {
+  color: var(--danger);
+  font-weight: 600;
+}

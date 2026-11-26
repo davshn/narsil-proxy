@@ -53,12 +53,17 @@ export function buildTriageInput(email: ParsedEmail): string {
   }
   return [
     '<email>',
-    `<from>${email.summary.from}</from>`,
-    `<subject>${email.summary.subject}</subject>`,
+    `<from>${escapeMarkup(email.summary.from)}</from>`,
+    `<subject>${escapeMarkup(email.summary.subject)}</subject>`,
     `<received>${email.summary.receivedAt}</received>`,
-    `<body>\n${body}\n</body>`,
+    `<body>\n${escapeMarkup(body)}\n</body>`,
     '</email>'
   ].join('\n')
+}
+
+/** Keeps untrusted text from closing or faking the <email> delimiters. */
+function escapeMarkup(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 export function normalizeTriage(output: TriageOutput): Triage {

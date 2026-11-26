@@ -46,14 +46,19 @@ function findPart(part: GmailPartLike | null | undefined, mimeType: string): Gma
 
 const ENTITIES: Record<string, string> = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
 
+/** Decodes a numeric entity; out-of-range values become U+FFFD instead of throwing. */
+function codePoint(value: number): string {
+  return Number.isInteger(value) && value >= 0 && value <= 0x10ffff ? String.fromCodePoint(value) : '�'
+}
+
 export function htmlToText(html: string): string {
   return html
     .replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (match, entity: string) => {
-      if (entity.startsWith('#x') || entity.startsWith('#X')) return String.fromCodePoint(parseInt(entity.slice(2), 16))
-      if (entity.startsWith('#')) return String.fromCodePoint(parseInt(entity.slice(1), 10))
+      if (entity.startsWith('#x') || entity.startsWith('#X')) return codePoint(parseInt(entity.slice(2), 16))
+      if (entity.startsWith('#')) return codePoint(parseInt(entity.slice(1), 10))
       return ENTITIES[entity.toLowerCase()] ?? match
     })
     .replace(/[ \t ]+/g, ' ')
@@ -72,6 +77,7 @@ export function parseMessage(message: GmailMessageLike): ParsedEmail {
   if (plain?.body?.data) bodyText = decodeBase64Url(plain.body.data).trim()
   else if (html?.body?.data) bodyText = htmlToText(decodeBase64Url(html.body.data))
 
+  const replyTo = header(payload, 'Reply-To') ?? from
   const parsed: ParsedEmail = {
     summary: {
       id: message.id ?? '',
@@ -79,10 +85,11 @@ export function parseMessage(message: GmailMessageLike): ParsedEmail {
       from,
       subject: header(payload, 'Subject')?.trim() || '(No subject)',
       snippet: message.snippet ?? '',
-      receivedAt: new Date(Number.isFinite(internal) && internal > 0 ? internal : Date.now()).toISOString()
+      receivedAt: new Date(Number.isFinite(internal) && internal > 0 ? internal : Date.now()).toISOString(),
+      replyTo
     },
     bodyText,
-    replyTo: header(payload, 'Reply-To') ?? from
+    replyTo
   }
   const messageId = header(payload, 'Message-ID')
   const references = header(payload, 'References')

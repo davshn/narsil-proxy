@@ -22,6 +22,10 @@ interface EmailCardProps {
   onReply(id: string, body: string): Promise<string | null>
 }
 
+function address(mailbox: string): string {
+  return (/<([^>]+)>/.exec(mailbox)?.[1] ?? mailbox).trim().toLowerCase()
+}
+
 function senderName(from: string): string {
   const match = /^\s*"?([^"<]+?)"?\s*</.exec(from)
   return match?.[1] ?? from
@@ -33,6 +37,8 @@ export function EmailCard({ item, onAction, onReply }: EmailCardProps): React.JS
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const recommended = triage?.recommendedAction
+  // A Reply-To that differs from From is a common phishing trick, so call it out.
+  const redirected = address(email.replyTo) !== address(email.from)
 
   async function act(fn: () => Promise<string | null>): Promise<void> {
     setBusy(true)
@@ -69,9 +75,9 @@ export function EmailCard({ item, onAction, onReply }: EmailCardProps): React.JS
 
       {triage && triage.replies.length > 0 && draft === null && (
         <div className="mail__replies" role="group" aria-label="Suggested replies">
-          {triage.replies.map((reply) => (
+          {triage.replies.map((reply, index) => (
             <button
-              key={reply.label}
+              key={index}
               type="button"
               className={recommended === 'reply' ? 'pill pill--lead' : 'pill'}
               onClick={() => setDraft(reply.body)}
@@ -88,6 +94,10 @@ export function EmailCard({ item, onAction, onReply }: EmailCardProps): React.JS
 
       {draft !== null && (
         <div className="mail__draft">
+          <p className={redirected ? 'mail__to mail__to--warn' : 'mail__to'}>
+            To: {email.replyTo}
+            {redirected && <span> (not the sender's address)</span>}
+          </p>
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}

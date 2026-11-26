@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildReplyRaw, parseMessage, replySubject } from '../src/main/domain/email'
+import { buildReplyRaw, htmlToText, parseMessage, replySubject } from '../src/main/domain/email'
 
 const b64url = (s: string): string => Buffer.from(s, 'utf8').toString('base64url')
 const decodeRaw = (raw: string): string => Buffer.from(raw, 'base64url').toString('utf8')
@@ -33,7 +33,8 @@ describe('parseMessage', () => {
       from: 'Ana <ana@example.com>',
       subject: 'Reunión',
       snippet: 'Hola, ¿nos vemos mañana?',
-      receivedAt: '2026-11-25T10:00:00.000Z'
+      receivedAt: '2026-11-25T10:00:00.000Z',
+      replyTo: 'Ana <ana@example.com>'
     })
     expect(parsed.messageId).toBe('<abc@mail.example.com>')
     expect(parsed.references).toBe('<root@mail.example.com>')
@@ -117,5 +118,26 @@ describe('buildReplyRaw', () => {
     )
     const headers = injected.split('\r\n\r\n')[0] ?? ''
     expect(headers.split('\r\n').some((line) => line.startsWith('Bcc:'))).toBe(false)
+  })
+})
+
+describe('htmlToText', () => {
+  it('does not throw on out-of-range numeric entities', () => {
+    expect(htmlToText('<p>Hi &#99999999; &#x110000; there</p>')).toBe('Hi � � there')
+    expect(htmlToText('<p>caf&#233; &#x2603;</p>')).toBe('café ☃')
+  })
+})
+
+describe('parseMessage reply target', () => {
+  it('exposes the reply address in the summary so the user can see it', () => {
+    const withReplyTo = {
+      ...baseMessage,
+      payload: {
+        ...baseMessage.payload,
+        headers: [...baseMessage.payload.headers, { name: 'Reply-To', value: 'other@example.net' }]
+      }
+    }
+    expect(parseMessage(withReplyTo).summary.replyTo).toBe('other@example.net')
+    expect(parseMessage(baseMessage).summary.replyTo).toBe('Ana <ana@example.com>')
   })
 })
