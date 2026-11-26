@@ -45,7 +45,8 @@ function draftOf(rule: ServerRule): ServerRuleInput {
     name: rule.name,
     conditions: rule.conditions,
     action: rule.action,
-    ...(rule.folderId ? { folderId: rule.folderId, folderName: rule.folderName ?? '' } : {})
+    ...(rule.folderId ? { folderId: rule.folderId, folderName: rule.folderName ?? '' } : {}),
+    ...(rule.enabled === false ? { enabled: false } : {})
   }
 }
 
@@ -55,6 +56,8 @@ interface Conversion {
   accountId: string
   folderId?: string
   folderName?: string
+  /** The user accepted that a disabled local rule becomes an always-on rule in the account. */
+  confirmEnabled?: boolean
 }
 
 interface RulesProps {
@@ -75,6 +78,8 @@ export function Rules({ rules, serverRules, activity, accounts, incomingDraft, o
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [listError, setListError] = useState<string | null>(null)
+  /** The server rule whose "Borrar" waits for confirmation. */
+  const [confirmDelete, setConfirmDelete] = useState<{ accountId: string; ruleId: string } | null>(null)
 
   useEffect(() => {
     void window.narsil.reloadServerRules()
@@ -242,42 +247,71 @@ export function Rules({ rules, serverRules, activity, accounts, incomingDraft, o
               )}
               {group.rules.length > 0 && (
                 <ul className="rule-list">
-                  {group.rules.map((rule) => (
-                    <li key={rule.id} className={rule.managedByNarsil ? 'rule' : 'rule rule--foreign'}>
-                      <div className="rule__text">
-                        <span className="rule__name">{rule.name}</span>
-                        <span className="rule__when">
-                          {rule.managedByNarsil
-                            ? `${describeConditions(rule.conditions)}: ${describeServerRuleAction(rule)}`
-                            : 'Creada fuera de Narsil. Solo puedes borrarla.'}
-                        </span>
-                      </div>
-                      <div className="rule__controls">
-                        {rule.managedByNarsil && (
-                          <button
-                            type="button"
-                            className="link-btn"
-                            disabled={busy}
-                            onClick={() => {
-                              setError(null)
-                              setConversion(null)
-                              setDraft(draftOf(rule))
-                            }}
-                          >
-                            Editar
-                          </button>
+                  {group.rules.map((rule) => {
+                    const confirming = confirmDelete?.accountId === rule.accountId && confirmDelete.ruleId === rule.id
+                    const classes = ['rule', !rule.managedByNarsil && 'rule--foreign', rule.enabled === false && 'rule--off']
+                    return (
+                      <li key={rule.id} className={classes.filter(Boolean).join(' ')}>
+                        <div className="rule__text">
+                          <span className="rule__name">{rule.name}</span>
+                          <span className="rule__when">
+                            {rule.managedByNarsil
+                              ? `${describeConditions(rule.conditions)}: ${describeServerRuleAction(rule)}`
+                              : 'Creada fuera de Narsil. Solo puedes borrarla.'}
+                          </span>
+                          {rule.enabled === false && <span className="rule__state">Desactivada en Outlook</span>}
+                        </div>
+                        {confirming ? (
+                          <div className="rule__confirm" role="group" aria-label="Confirmar borrado">
+                            <span>¿Borrar esta regla de {accountEmail(rule.accountId)}? No se puede deshacer.</span>
+                            <button
+                              type="button"
+                              className="link-btn link-btn--danger"
+                              disabled={busy}
+                              onClick={() =>
+                                void act(() => window.narsil.deleteServerRule(rule.accountId, rule.id), setListError).then(
+                                  () => setConfirmDelete(null)
+                                )
+                              }
+                            >
+                              Borrar
+                            </button>
+                            <button type="button" className="link-btn" disabled={busy} onClick={() => setConfirmDelete(null)}>
+                              Cancelar
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="rule__controls">
+                            {rule.managedByNarsil && (
+                              <button
+                                type="button"
+                                className="link-btn"
+                                disabled={busy}
+                                onClick={() => {
+                                  setError(null)
+                                  setConversion(null)
+                                  setDraft(draftOf(rule))
+                                }}
+                              >
+                                Editar
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="link-btn link-btn--danger"
+                              disabled={busy}
+                              onClick={() => {
+                                setListError(null)
+                                setConfirmDelete({ accountId: rule.accountId, ruleId: rule.id })
+                              }}
+                            >
+                              Borrar
+                            </button>
+                          </div>
                         )}
-                        <button
-                          type="button"
-                          className="link-btn link-btn--danger"
-                          disabled={busy}
-                          onClick={() => void act(() => window.narsil.deleteServerRule(rule.accountId, rule.id), setListError)}
-                        >
-                          Borrar
-                        </button>
-                      </div>
-                    </li>
-                  ))}
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </div>
@@ -344,7 +378,7 @@ export function Rules({ rules, serverRules, activity, accounts, incomingDraft, o
                     onChange={setConversion}
                     onCancel={() => setConversion(null)}
                     onConvert={() => {
-                      const { ruleId, ...target } = conversion
+                      const { ruleId, confirmEnabled: _confirmed, ...target } = conversion
                       void act(() => window.narsil.convertLocalRule(ruleId, target), setError).then((ok) => ok && setConversion(null))
                     }}
                   />
@@ -395,6 +429,7 @@ interface ConvertPanelProps {
 function ConvertPanel({ rule, conversion, accounts, busy, error, onChange, onCancel, onConvert }: ConvertPanelProps): React.JSX.Element {
   const fixed = rule.action === 'save' && rule.folder ? rule.folder : null
   const needsFolder = rule.action === 'save' && !rule.folder
+  const needsConfirm = !rule.enabled && conversion.confirmEnabled !== true
   const email = (id: string): string => accounts.find((a) => a.id === id)?.email ?? 'cuenta quitada'
 
   return (
@@ -410,7 +445,13 @@ function ConvertPanel({ rule, conversion, accounts, busy, error, onChange, onCan
             <select
               value={conversion.accountId}
               disabled={busy}
-              onChange={(e) => onChange({ ruleId: conversion.ruleId, accountId: e.target.value })}
+              onChange={(e) =>
+                onChange({
+                  ruleId: conversion.ruleId,
+                  accountId: e.target.value,
+                  ...(conversion.confirmEnabled ? { confirmEnabled: true } : {})
+                })
+              }
             >
               {accounts.map((account) => (
                 <option key={account.id} value={account.id}>
@@ -433,6 +474,17 @@ function ConvertPanel({ rule, conversion, accounts, busy, error, onChange, onCan
           <p className="rule-form__hint">Después de crearla en la cuenta, se borra la regla local.</p>
         </>
       )}
+      {!rule.enabled && (
+        <label className="rule-convert__confirm">
+          <input
+            type="checkbox"
+            checked={conversion.confirmEnabled === true}
+            disabled={busy}
+            onChange={(e) => onChange({ ...conversion, confirmEnabled: e.target.checked })}
+          />
+          Esta regla está desactivada; al pasarla a la cuenta quedará activa.
+        </label>
+      )}
       {error && (
         <p className="rules__error" role="alert">
           {error}
@@ -442,7 +494,12 @@ function ConvertPanel({ rule, conversion, accounts, busy, error, onChange, onCan
         <button type="button" className="btn btn--ghost" disabled={busy} onClick={onCancel}>
           Cancelar
         </button>
-        <button type="button" className="btn btn--primary" disabled={busy || (needsFolder && !conversion.folderId)} onClick={onConvert}>
+        <button
+          type="button"
+          className="btn btn--primary"
+          disabled={busy || needsConfirm || (needsFolder && !conversion.folderId)}
+          onClick={onConvert}
+        >
           {busy ? 'Pasando…' : 'Pasar'}
         </button>
       </div>

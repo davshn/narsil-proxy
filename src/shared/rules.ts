@@ -95,9 +95,10 @@ export function normalizeConditions(input: RuleConditions): RuleConditions {
 export function normalizeServerRule(input: NewServerRule): NewServerRule {
   const conditions = normalizeConditions(input.conditions)
   const name = input.name.trim() || describeConditions(conditions)
-  if (input.action !== 'move') return { name, conditions, action: input.action }
+  const off = input.enabled === false ? { enabled: false } : {}
+  if (input.action !== 'move') return { name, conditions, action: input.action, ...off }
   if (!input.folderId) throw new Error(NO_FOLDER)
-  return { name, conditions, action: 'move', folderId: input.folderId, folderName: input.folderName?.trim() ?? '' }
+  return { name, conditions, action: 'move', folderId: input.folderId, folderName: input.folderName?.trim() ?? '', ...off }
 }
 
 /** What a server rule does, in lower case, for the rule list. */

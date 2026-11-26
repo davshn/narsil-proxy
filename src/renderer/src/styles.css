@@ -933,6 +933,26 @@ textarea {
   font-size: 13px;
 }
 
+/* "Desactivada en Outlook": a server rule turned off in the account. */
+.rule__state {
+  display: block;
+  font-size: 12px;
+  color: var(--text-2);
+  font-style: italic;
+}
+
+/* The inline "¿Borrar esta regla…?" confirmation in place of the rule's controls. */
+.rule__confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 55%;
+  font-size: 13px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
 .rule__toggle {
   display: flex;
   align-items: center;
@@ -1019,6 +1039,7 @@ textarea {
 .folders {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 
 .folders__list {
@@ -1028,8 +1049,15 @@ textarea {
   max-height: 140px;
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   list-style: none;
+}
+
+/* A long folder name shrinks to an ellipsis instead of widening the list. */
+.folders__list > li {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .folder {
@@ -1138,6 +1166,14 @@ textarea {
   gap: 2px;
   font-size: 13px;
   color: var(--text-2);
+}
+
+.rule-convert__confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--warning);
 }
 
 .rule-convert__field select {

@@ -97,6 +97,8 @@ interface RuleListState {
 }
 
 const UNKNOWN_ACCOUNT = 'Esta cuenta ya no está conectada.'
+const REMOVED_DURING_RECONNECT = 'Quitaste esta cuenta mientras se reconectaba.'
+const READ_ONLY_RULE = 'Esta regla se creó fuera de Narsil y no se puede editar aquí; solo se puede borrar.'
 
 const itemKey = (accountId: string, messageId: string): string => `${accountId}:${messageId}`
 
@@ -300,29 +302,29 @@ export class NarsilService {
   }
 
   /**
-   * Creates a rule on its account, or replaces rule `input.id` there (remove, then create: Gmail
-   * filters cannot be updated). Then applies it once to that account's listed emails.
+   * Creates a rule on its account, or replaces rule `input.id` there (create, then remove: Gmail
+   * filters cannot be updated, and a failed create must leave the old rule in place). An edited
+   * rule keeps its on/off state. Then an enabled rule runs once on that account's listed emails.
    */
   async saveServerRule(input: ServerRuleInput): Promise<void> {
     const connected = this.requireConnected(input.accountId)
-    const rule = normalizeServerRule(input)
-    const rules = connected.connection.rules
     const replacing = input.id
+    const previous = replacing ? this.serverRuleLists.get(input.accountId)?.rules.find((r) => r.id === replacing) : undefined
+    if (previous && !previous.managedByNarsil) throw new Error(READ_ONLY_RULE)
+    const enabled = input.enabled ?? previous?.enabled
+    const rule = normalizeServerRule(enabled === undefined ? input : { ...input, enabled })
+    const rules = connected.connection.rules
+    const created = await this.ruleCall(connected, () => rules.create(rule))
+    this.patchServerRules(input.accountId, (list) => [...list, created])
     if (replacing) {
-      await this.ruleCall(connected, () => rules.remove(replacing))
+      try {
+        await this.ruleCall(connected, () => rules.remove(replacing))
+      } catch (error) {
+        throw new Error(`Se creó la regla nueva, pero no se pudo quitar la anterior: ${message(error)}`)
+      }
       this.patchServerRules(input.accountId, (list) => list.filter((r) => r.id !== replacing))
     }
-    let created: ServerRule
-    try {
-      created = await this.ruleCall(connected, () => rules.create(rule))
-    } catch (error) {
-      if (replacing && !(error instanceof ReconnectRequiredError)) {
-        throw new Error(`Se quitó la regla anterior, pero no se pudo crear la nueva: ${message(error)}`)
-      }
-      throw error
-    }
-    this.patchServerRules(input.accountId, (list) => [...list, created])
-    await this.applyServerRuleOnce(connected, rule)
+    if (rule.enabled !== false) await this.applyServerRuleOnce(connected, rule)
   }
 
   async deleteServerRule(accountId: string, ruleId: string): Promise<void> {
@@ -375,7 +377,17 @@ export class NarsilService {
     if (!account) throw new Error(UNKNOWN_ACCOUNT)
     await this.initRun?.catch(() => undefined)
     const provider = this.providers[account.provider]
-    await provider.reconnect(accountId, account.email)
+    try {
+      await provider.reconnect(accountId, account.email)
+    } catch (error) {
+      if (!this.isRegistered(accountId)) throw new Error(REMOVED_DURING_RECONNECT)
+      throw error
+    }
+    // Removed while the browser was open: undo whatever the sign-in stored and never connect it.
+    if (!this.isRegistered(accountId)) {
+      await provider.removeAccount(accountId).catch(() => undefined)
+      throw new Error(REMOVED_DURING_RECONNECT)
+    }
     const connection = provider.connect(accountId)
     if (connection) {
       this.connections.set(accountId, { account: this.connections.get(accountId)?.account ?? account, connection })
@@ -384,6 +396,10 @@ export class NarsilService {
     this.setReconnectNeeded(accountId, false)
     this.emitStatus()
     await this.loadServerRules(accountId)
+  }
+
+  private isRegistered(accountId: string): boolean {
+    return this.accounts.list().some((a) => a.id === accountId)
   }
 
   /** Runs a rule call; a missing permission flags the account before the error goes on. */
@@ -494,12 +510,24 @@ export class NarsilService {
     await this.refresh()
   }
 
-  /** Forgets an account's credentials and drops its emails and meetings. */
+  /**
+   * Forgets an account's credentials and drops its emails and meetings. A reconnect sign-in in
+   * flight for it is not awaited (the browser may stay open for minutes); once it settles, its
+   * credentials are removed again, so a sign-in finishing mid-removal cannot bring them back.
+   */
   async removeAccount(accountId: string): Promise<void> {
     const account = this.accounts.list().find((a) => a.id === accountId)
     if (!account) return
-    await this.providers[account.provider].removeAccount(accountId)
+    const provider = this.providers[account.provider]
+    const reconnecting = this.reconnecting.get(accountId)
+    await provider.removeAccount(accountId)
     this.accounts.remove(accountId)
+    if (reconnecting) {
+      void reconnecting
+        .catch(() => undefined)
+        .then(() => (this.isRegistered(accountId) ? undefined : provider.removeAccount(accountId)))
+        .catch(() => undefined)
+    }
     this.disconnect(accountId)
     this.emitInbox()
     this.events.meetingsChanged(this.meetings)

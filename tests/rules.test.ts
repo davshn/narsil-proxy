@@ -169,6 +169,14 @@ describe('server rules', () => {
     })
   })
 
+  it('keeps a server rule turned off, and leaves the flag out for one that is on', () => {
+    expect(normalizeServerRule({ name: 'x', conditions, action: 'delete', enabled: false })).toMatchObject({ enabled: false })
+    expect(normalizeServerRule({ name: 'x', conditions, action: 'move', folderId: 'L1', enabled: false })).toMatchObject({
+      enabled: false
+    })
+    expect(normalizeServerRule({ name: 'x', conditions, action: 'delete', enabled: true })).not.toHaveProperty('enabled')
+  })
+
   it('rejects a server rule without conditions, and a move without a folder', () => {
     expect(() => normalizeServerRule({ name: 'x', conditions: { from: ' ', subject: '', body: '' }, action: 'delete' })).toThrow(
       'Agrega al menos una condición.'

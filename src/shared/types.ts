@@ -115,6 +115,8 @@ export interface NewServerRule {
   action: ServerRuleAction
   folderId?: string
   folderName?: string
+  /** False for an Outlook rule turned off in Outlook; absent means on. Gmail filters are always on. */
+  enabled?: boolean
 }
 
 /**

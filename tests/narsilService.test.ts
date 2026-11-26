@@ -1169,15 +1169,77 @@ describe('NarsilService server rules', () => {
     expect(events.serverRulesChanged).toHaveBeenCalled()
   })
 
-  it('edits a rule by removing it, then creating the new one', async () => {
+  it('edits a rule by creating the new one, then removing the old one', async () => {
     const { service, google } = await makeService()
     const box = google.box('g1')
     box.serverRules = [{ id: 'f1', accountId: 'g1', name: 'Vieja', conditions: shop, action: 'archive', managedByNarsil: true }]
+    await service.loadServerRules()
 
     await service.saveServerRule({ id: 'f1', accountId: 'g1', name: 'Nueva', conditions: shop, action: 'delete' })
 
-    expect(box.ruleCalls).toEqual(['remove:f1', 'create:Nueva'])
+    expect(box.ruleCalls).toEqual(['create:Nueva', 'remove:f1'])
     expect(box.serverRules.map((r) => r.name)).toEqual(['Nueva'])
+    expect(service.serverRules()[0]?.rules.map((r) => r.name)).toEqual(['Nueva'])
+  })
+
+  it('keeps the old rule when an edit cannot create the new one', async () => {
+    const { service, google } = await makeService()
+    const box = google.box('g1')
+    box.serverRules = [{ id: 'f1', accountId: 'g1', name: 'Vieja', conditions: shop, action: 'archive', managedByNarsil: true }]
+    await service.loadServerRules()
+    box.createError = new Error('Label not found')
+
+    await expect(
+      service.saveServerRule({ id: 'f1', accountId: 'g1', name: 'Nueva', conditions: shop, action: 'move', folderId: 'Label_gone' })
+    ).rejects.toThrow('Label not found')
+
+    expect(box.ruleCalls).toEqual(['create:Nueva'])
+    expect(box.serverRules.map((r) => r.id)).toEqual(['f1'])
+    expect(service.serverRules()[0]?.rules.map((r) => r.id)).toEqual(['f1'])
+  })
+
+  it('reports an edit whose old rule could not be removed after the new one was created', async () => {
+    const { service, google } = await makeService()
+    const box = google.box('g1')
+    box.serverRules = [{ id: 'f1', accountId: 'g1', name: 'Vieja', conditions: shop, action: 'archive', managedByNarsil: true }]
+    await service.loadServerRules()
+    box.removeRule.mockRejectedValueOnce(new Error('Backend Error'))
+
+    await expect(service.saveServerRule({ id: 'f1', accountId: 'g1', name: 'Nueva', conditions: shop, action: 'delete' })).rejects.toThrow(
+      'Se creó la regla nueva, pero no se pudo quitar la anterior: Backend Error'
+    )
+
+    expect(box.ruleCalls).toEqual(['create:Nueva', 'remove:f1'])
+    expect(service.serverRules()[0]?.rules.map((r) => r.name)).toEqual(['Vieja', 'Nueva'])
+  })
+
+  it('refuses to edit a rule made outside Narsil, which can only be deleted', async () => {
+    const { service, google } = await makeService()
+    const box = google.box('g1')
+    box.serverRules = [{ id: 'f1', accountId: 'g1', name: 'x', conditions: shop, action: 'archive', managedByNarsil: false }]
+    await service.loadServerRules()
+
+    await expect(service.saveServerRule({ id: 'f1', accountId: 'g1', name: 'x', conditions: shop, action: 'archive' })).rejects.toThrow(
+      'Esta regla se creó fuera de Narsil y no se puede editar aquí; solo se puede borrar.'
+    )
+    expect(box.ruleCalls).toEqual([])
+  })
+
+  it('keeps a rule turned off in Outlook turned off when it is edited, and does not run it once', async () => {
+    const { service, google } = await makeService()
+    const box = google.box('g1')
+    box.ids = ['promo']
+    box.senders.promo = 'promo@shop.example'
+    fake.triage.mockResolvedValue(TRIAGE)
+    await service.refresh()
+    box.serverRules = [{ id: 'f1', accountId: 'g1', name: 'Apagada', conditions: shop, action: 'archive', enabled: false, managedByNarsil: true }]
+    await service.loadServerRules()
+
+    await service.saveServerRule({ id: 'f1', accountId: 'g1', name: 'Apagada', conditions: shop, action: 'delete' })
+
+    expect(box.createRule).toHaveBeenCalledWith({ name: 'Apagada', conditions: shop, action: 'delete', enabled: false })
+    expect(box.trash).not.toHaveBeenCalled()
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['g1:promo'])
   })
 
   it('rejects a rule without conditions and a move without a folder, creating nothing', async () => {
@@ -1328,6 +1390,32 @@ describe('NarsilService server rules', () => {
     expect(google.reconnect).toHaveBeenCalledWith('g1', 'ana@gmail.com')
     expect(service.serverRules()[0]).toMatchObject({ needsReconnect: false, rules: [{ id: 'f1' }] })
     expect(service.status().accounts[0]?.needsReconnect).toBeUndefined()
+  })
+
+  it('does not resurrect an account removed during its reconnect', async () => {
+    const { service, google, registry } = await makeService({ accounts: [ANA] })
+    const box = google.box('g1')
+    box.serverRules = [{ id: 'f1', accountId: 'g1', name: 'x', conditions: shop, action: 'archive', managedByNarsil: true }]
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    google.reconnect.mockImplementation(async () => {
+      await gate
+    })
+
+    const pending = service.reconnectAccount('g1')
+    await service.removeAccount('g1')
+    expect(registry.list()).toEqual([])
+    google.removeAccount.mockClear()
+    release()
+
+    await expect(pending).rejects.toThrow('Quitaste esta cuenta mientras se reconectaba.')
+    expect(google.removeAccount).toHaveBeenCalledWith('g1')
+    expect(registry.list()).toEqual([])
+    expect(service.status().accounts).toEqual([])
+    expect(service.serverRules()).toEqual([])
+    const listed = box.listed
+    await service.refresh()
+    expect(box.listed).toBe(listed)
   })
 
   it('keeps the account flagged when the reconnect fails', async () => {

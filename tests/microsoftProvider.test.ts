@@ -517,9 +517,8 @@ describe('Outlook inbox rules through Microsoft Graph', () => {
       displayName: 'Tienda',
       sequence: 4,
       isEnabled: true,
-      stopProcessingRules: false,
       conditions: { senderContains: ['shop.example'] },
-      actions: { moveToFolder: 'id-archive' }
+      actions: { moveToFolder: 'id-archive', stopProcessingRules: false }
     })
     expect(created).toEqual({
       id: 'r-new',
@@ -540,15 +539,15 @@ describe('Outlook inbox rules through Microsoft Graph', () => {
       displayName: 'Mover',
       sequence: 1,
       isEnabled: true,
-      stopProcessingRules: false,
       conditions: { senderContains: ['a.example'], subjectContains: ['factura'], bodyContains: ['pago'] },
-      actions: { moveToFolder: 'id-work' }
+      actions: { moveToFolder: 'id-work', stopProcessingRules: false }
     })
     expect(calls().some((c) => c.url.includes('/mailFolders/archive'))).toBe(false)
 
     fetchMock.mockClear()
     await connect().rules.create({ name: 'Borrar', conditions: { from: '', subject: 'promo', body: '' }, action: 'delete' })
-    expect(posted()).toMatchObject({ conditions: { subjectContains: ['promo'] }, actions: { delete: true } })
+    expect(posted()).toMatchObject({ conditions: { subjectContains: ['promo'] }, actions: { delete: true, stopProcessingRules: false } })
+    expect(Object.keys(posted() as object)).not.toContain('stopProcessingRules')
   })
 
   it('removes a rule by id', async () => {
@@ -590,6 +589,23 @@ describe('Outlook inbox rules through Microsoft Graph', () => {
         managedByNarsil: true
       }
     ])
+  })
+
+  it('reads a rule turned off in Outlook as disabled and writes a disabled rule back turned off', async () => {
+    ruleServer([
+      { id: 'r1', displayName: 'Apagada', isEnabled: false, conditions: { senderContains: ['shop.example'] }, actions: { delete: true } },
+      { id: 'r2', displayName: 'Encendida', isEnabled: true, conditions: { senderContains: ['shop.example'] }, actions: { delete: true } }
+    ])
+
+    const listed = await connect().rules.list()
+
+    expect(listed[0]).toMatchObject({ id: 'r1', enabled: false, managedByNarsil: true })
+    expect(listed[1]).not.toHaveProperty('enabled')
+
+    fetchMock.mockClear()
+    const created = await connect().rules.create({ name: 'Apagada', conditions: when, action: 'delete', enabled: false })
+    expect(posted()).toMatchObject({ isEnabled: false })
+    expect(created).toMatchObject({ enabled: false })
   })
 
   it('shows rules Narsil cannot map as read-only', async () => {
@@ -671,6 +687,26 @@ describe('MicrosoftProvider reconnect', () => {
     expect(store.get('microsoft-account.acc-1')).toBe('home-1')
     expect(store.list('microsoft-account.')).toEqual(['microsoft-account.acc-1'])
     expect(msal.cache.removeAccount).toHaveBeenCalledWith(other)
+  })
+
+  it('never maps back or keeps in the cache an account removed while its sign-in ran', async () => {
+    let finish!: (value: unknown) => void
+    msal.acquireTokenInteractive.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    fetchMock.mockImplementation(async () => respond(200, { mail: 'ana@outlook.com' }))
+    const store = connectedStore()
+    const provider = new MicrosoftProvider(store)
+    const pending = provider.reconnect('acc-1', 'ana@outlook.com')
+    await vi.waitFor(() => expect(msal.acquireTokenInteractive).toHaveBeenCalled())
+    await provider.removeAccount('acc-1')
+    msal.cache.removeAccount.mockClear()
+
+    // MSAL writes the signed-in account back to its cache before the sign-in resolves.
+    finish({ accessToken: 'secret-token', account: msal.account })
+
+    await expect(pending).rejects.toThrow('Esta cuenta ya no está conectada.')
+    expect(store.list('microsoft-account.')).toEqual([])
+    expect(msal.cache.removeAccount).toHaveBeenCalledWith(msal.account)
+    expect(provider.connect('acc-1')).toBeNull()
   })
 
   it('refuses to reconnect an unknown account', async () => {

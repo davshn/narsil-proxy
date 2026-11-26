@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { OAuth2Client, type Credentials } from 'google-auth-library'
 import type { AccountConnection, AddedAccount, ProviderAuth } from '../../app/ports'
 import { LEGACY_GOOGLE_ACCOUNT_ID, type SecretStore } from '../../app/accounts'
-import { parseClientFile, signInWithBrowser, type ClientConfig } from '../googleAuth'
+import { GMAIL_SETTINGS_SCOPE, GOOGLE_SCOPES, parseClientFile, signInWithBrowser, type ClientConfig } from '../googleAuth'
 import { GmailService, fetchProfileEmail } from '../gmail'
 import { CalendarService } from '../calendar'
 import { GmailRules } from './gmailRules'
@@ -17,6 +17,21 @@ export interface GoogleProviderOptions {
 }
 
 const tokenSecret = (accountId: string) => `google-tokens.${accountId}` as const
+
+/** What mail and calendar need. Without the filter scope only the rules ask for a reconnect. */
+const REQUIRED_SCOPES = GOOGLE_SCOPES.filter((scope) => scope !== GMAIL_SETTINGS_SCOPE)
+
+const MISSING_SCOPES = 'Google no concedió todos los permisos. Vuelve a intentarlo y marca todas las casillas.'
+
+/**
+ * Rejects a grant where the user unticked a mail or calendar permission on Google's consent
+ * screen. Google always reports the granted scopes; a response without them is not judged here.
+ */
+function requireMailScopes(tokens: Credentials): void {
+  if (typeof tokens.scope !== 'string') return
+  const granted = new Set(tokens.scope.split(/\s+/))
+  if (REQUIRED_SCOPES.some((scope) => !granted.has(scope))) throw new Error(MISSING_SCOPES)
+}
 
 /** Ids are randomUUIDs; anything else cannot name a stored account. */
 const ACCOUNT_ID = /^[a-z0-9-]{1,64}$/i
@@ -92,11 +107,14 @@ export class GoogleProvider implements ProviderAuth {
     if (!config) throw new Error('Primero carga tu archivo de cliente OAuth de Google.')
     const client = this.createClient(config)
     const tokens = await signInWithBrowser(client, this.openExternal, email)
+    requireMailScopes(tokens)
     client.setCredentials(tokens)
     const signedIn = (await this.fetchProfileEmail(client)).trim()
     if (signedIn.toLowerCase() !== email.trim().toLowerCase()) {
       throw new Error(`Iniciaste sesión con ${signedIn}, pero esta cuenta es ${email}. Vuelve a intentarlo con ${email}.`)
     }
+    // The account may have been removed while the browser was open: never store its tokens again.
+    if (!this.store.has(tokenSecret(accountId))) throw new Error('Esta cuenta ya no está conectada.')
     // Drop the cached client first so a refresh of the old tokens cannot overwrite the new ones.
     this.dropClient(accountId)
     this.store.set(tokenSecret(accountId), JSON.stringify(tokens))
@@ -107,6 +125,7 @@ export class GoogleProvider implements ProviderAuth {
     if (!config) throw new Error('Primero carga tu archivo de cliente OAuth de Google.')
     const client = this.createClient(config)
     const tokens = await signInWithBrowser(client, this.openExternal)
+    requireMailScopes(tokens)
     client.setCredentials(tokens)
     const email = await this.fetchProfileEmail(client)
     const accountId = this.newId()

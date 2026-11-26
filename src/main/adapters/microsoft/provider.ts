@@ -132,6 +132,17 @@ export class MicrosoftProvider implements ProviderAuth {
     const result = await this.signIn(app, current ? { account: current } : { loginHint: email })
     const account = result.account
     if (!account) throw new Error('Microsoft no devolvió una cuenta al iniciar sesión.')
+    if (!this.isMapped(accountId)) {
+      // Removed while the browser was open: MSAL just cached the account again, so drop it
+      // unless another mapping still uses it, and never write the mapping back.
+      if (!this.mappedAccountId(account.homeAccountId)) {
+        await app
+          .getTokenCache()
+          .removeAccount(account)
+          .catch(() => undefined)
+      }
+      throw new Error('Esta cuenta ya no está conectada.')
+    }
     const signedIn = (await this.mailboxAddress(result.accessToken)) ?? account.username
     const sameAccount = account.homeAccountId === homeAccountId
     if (!sameAccount && signedIn.toLowerCase() !== email.trim().toLowerCase()) {
@@ -238,6 +249,14 @@ export class MicrosoftProvider implements ProviderAuth {
       throw new Error(`Falló el inicio de sesión en Microsoft: ${errorText(error)}`)
     }
     return result
+  }
+
+  private isMapped(accountId: string): boolean {
+    try {
+      return this.store.has(accountSecret(accountId))
+    } catch {
+      return false
+    }
   }
 
   /** The Narsil account id mapped to an MSAL `homeAccountId`, ignoring `except`. */

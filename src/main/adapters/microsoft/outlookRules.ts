@@ -18,6 +18,7 @@ interface GraphRule {
   id?: string | null
   displayName?: string | null
   sequence?: number | null
+  isEnabled?: boolean | null
   conditions?: Record<string, unknown> | null
   exceptions?: Record<string, unknown> | null
   actions?: Record<string, unknown> | null
@@ -41,9 +42,11 @@ export function messageRuleBody(rule: NewServerRule, sequence: number, archiveId
   for (const field of Object.keys(PREDICATE) as Array<keyof RuleConditions>) {
     if (rule.conditions[field]) conditions[PREDICATE[field]] = [rule.conditions[field]]
   }
-  const actions =
+  const target =
     rule.action === 'delete' ? { delete: true } : { moveToFolder: rule.action === 'archive' ? archiveId : rule.folderId }
-  return { displayName: rule.name, sequence, isEnabled: true, stopProcessingRules: false, conditions, actions }
+  // stopProcessingRules is one of the rule's actions (messageRuleActions); Graph rejects it on the rule.
+  const actions = { ...target, stopProcessingRules: false }
+  return { displayName: rule.name, sequence, isEnabled: rule.enabled !== false, conditions, actions }
 }
 
 /** The rule an Outlook messageRule is, or a read-only best guess for one Narsil never writes. */
@@ -86,6 +89,7 @@ export function messageRuleToServerRule(
     conditions,
     action,
     ...(action === 'move' && moveTo ? { folderId: moveTo, folderName: folderNames.get(moveTo) ?? '' } : {}),
+    ...(raw.isEnabled === false ? { enabled: false } : {}),
     managedByNarsil: !foreign && hasCondition
   }
 }
@@ -131,6 +135,7 @@ export class OutlookRules implements RuleProvider {
         conditions: rule.conditions,
         action: rule.action,
         ...(rule.action === 'move' ? { folderId: rule.folderId ?? '', folderName: rule.folderName ?? '' } : {}),
+        ...(rule.enabled === false ? { enabled: false } : {}),
         managedByNarsil: true
       }
     })
