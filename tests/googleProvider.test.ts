@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { OAuth2Client } from 'google-auth-library'
-import type { SecretStore } from '../src/main/app/accounts'
+import { AccountRegistry, LEGACY_GOOGLE_ACCOUNT_ID, migrateLegacyGoogleTokens, type SecretStore } from '../src/main/app/accounts'
+import type { SecretName } from '../src/main/adapters/secureStore'
 
 vi.mock('electron', () => ({ shell: { openExternal: vi.fn() } }))
 
@@ -13,9 +14,11 @@ function memoryStore(initial: Record<string, string> = {}): SecretStore & { data
   return {
     data,
     get: (name) => data.get(name) ?? null,
+    getStrict: (name) => data.get(name) ?? null,
     set: (name, value) => void data.set(name, value),
     delete: (name) => void data.delete(name),
-    has: (name) => data.has(name)
+    has: (name) => data.has(name),
+    list: (prefix) => [...data.keys()].filter((name) => name.startsWith(prefix)) as SecretName[]
   }
 }
 
@@ -142,6 +145,30 @@ describe('GoogleProvider', () => {
     expect(clients.some((c) => vi.mocked(c.revokeToken).mock.calls.some(([token]) => token === 'r1'))).toBe(true)
     expect(store.data.has('google-tokens.a1')).toBe(false)
     await expect(provider.removeAccount('unknown')).resolves.toBeUndefined()
+  })
+
+  it('does not bring back a removed migrated account whose migration crashed before deleting the legacy tokens', async () => {
+    const legacy = JSON.stringify({ refresh_token: 'r-old', access_token: 'a-old' })
+    const store = memoryStore({ 'google-client': CLIENT, 'google-tokens': legacy })
+    const accounts = new AccountRegistry(store)
+    const { provider } = makeProvider(store)
+    const realDelete = store.delete
+    store.delete = (name) => {
+      if (name === 'google-tokens') throw new Error('crash')
+      realDelete(name)
+    }
+    const fetchEmail = async () => 'ana@gmail.com'
+    await expect(migrateLegacyGoogleTokens({ store, accounts, fetchEmail })).rejects.toThrow('crash')
+    store.delete = realDelete
+
+    // The user removes the migrated account in the same session, as the core does.
+    provider.connect(LEGACY_GOOGLE_ACCOUNT_ID)
+    await provider.removeAccount(LEGACY_GOOGLE_ACCOUNT_ID)
+    accounts.remove(LEGACY_GOOGLE_ACCOUNT_ID)
+
+    expect(store.data.has('google-tokens')).toBe(false)
+    expect(await migrateLegacyGoogleTokens({ store, accounts, fetchEmail })).toBeNull()
+    expect(accounts.list()).toEqual([])
   })
 
   it('discards a just-added account that was never connected without revoking the shared grant', async () => {

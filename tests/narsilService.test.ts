@@ -3,6 +3,7 @@ import { NarsilService, type NarsilEvents } from '../src/main/app/narsilService'
 import { AccountRegistry, type SecretStore } from '../src/main/app/accounts'
 import { parseMessage, type ParsedEmail } from '../src/main/domain/email'
 import type { AccountConnection, AddedAccount, ProviderAuth } from '../src/main/app/ports'
+import type { SecretName } from '../src/main/adapters/secureStore'
 import type { Account, Meeting, ProviderKind, Rule, Triage } from '@shared/types'
 
 const fake = vi.hoisted(() => ({ triage: vi.fn<() => Promise<Triage>>() }))
@@ -54,7 +55,11 @@ class FakeProvider implements ProviderAuth {
     return box
   }
 
+  /** Accounts whose stored credentials are unreadable: connect() throws for them. */
+  readonly corrupt = new Set<string>()
+
   connect(accountId: string): AccountConnection | null {
+    if (this.corrupt.has(accountId)) throw new SyntaxError('Unexpected token in JSON')
     const box = this.boxes.get(accountId)
     if (!box) return null
     return {
@@ -95,13 +100,15 @@ const TRIAGE: Triage = { summary: 's', recommendedAction: 'archive', reason: 'r'
 const ANA: Account = { id: 'g1', provider: 'google', email: 'ana@gmail.com' }
 const BETO: Account = { id: 'g2', provider: 'google', email: 'beto@gmail.com' }
 
-function memoryStore(): SecretStore {
-  const data = new Map<string, string>([['anthropic-key', 'test-key']])
+function memoryStore(initial: Record<string, string> = {}): SecretStore {
+  const data = new Map<string, string>([['anthropic-key', 'test-key'], ...Object.entries(initial)])
   return {
     get: (name) => data.get(name) ?? null,
+    getStrict: (name) => data.get(name) ?? null,
     set: (name, value) => void data.set(name, value),
     delete: (name) => void data.delete(name),
-    has: (name) => data.has(name)
+    has: (name) => data.has(name),
+    list: (prefix) => [...data.keys()].filter((name) => name.startsWith(prefix)) as SecretName[]
   }
 }
 
@@ -117,8 +124,19 @@ interface Setup {
   events: { [K in keyof NarsilEvents]: ReturnType<typeof vi.fn> }
 }
 
-async function makeService(options: { accounts?: Account[]; repo?: ReturnType<typeof makeRepo>; migrate?: () => Promise<void> } = {}): Promise<Setup> {
-  const store = memoryStore()
+interface ServiceOptions {
+  accounts?: Account[]
+  repo?: ReturnType<typeof makeRepo>
+  migrate?: () => Promise<void>
+  secrets?: Record<string, string>
+  /** Runs before init(), e.g. to break a provider. */
+  prepare?: (setup: Omit<Setup, 'service'>) => void
+  /** Leaves init() to the test. */
+  skipInit?: boolean
+}
+
+async function makeService(options: ServiceOptions = {}): Promise<Setup> {
+  const store = memoryStore(options.secrets)
   const registry = new AccountRegistry(store)
   const google = new FakeProvider('google')
   const microsoft = new FakeProvider('microsoft')
@@ -142,8 +160,9 @@ async function makeService(options: { accounts?: Account[]; repo?: ReturnType<ty
     providers: { google, microsoft },
     ...(options.migrate ? { migrate: options.migrate } : {})
   })
+  options.prepare?.({ google, microsoft, registry, events })
   // start() would also arm timers; connecting is all these tests need.
-  await service.init()
+  if (!options.skipInit) await service.init()
   return { service, google, microsoft, registry, events }
 }
 
@@ -314,6 +333,51 @@ describe('NarsilService with several accounts', () => {
     expect(registry.list()).toEqual([ANA])
   })
 
+  it('returns without removing anything when the sign-in hands back an account already registered', async () => {
+    const { service, google, registry } = await makeService()
+    google.nextAccount = { accountId: 'g1', email: 'ana@gmail.com' }
+
+    await expect(service.addAccount('google')).resolves.toBeUndefined()
+
+    expect(google.removeAccount).not.toHaveBeenCalled()
+    expect(registry.list()).toEqual([ANA])
+  })
+
+  it('runs one sign-in per provider and gives callers that join it the same outcome', async () => {
+    const { service, google, registry } = await makeService({ accounts: [] })
+    let finish!: (added: AddedAccount) => void
+    google.addAccount.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+    google.box('g9')
+
+    const first = service.addAccount('google')
+    const second = service.addAccount('google')
+    await vi.waitFor(() => expect(google.addAccount).toHaveBeenCalledTimes(1))
+    finish({ accountId: 'g9', email: 'nueva@gmail.com' })
+
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined])
+    expect(google.addAccount).toHaveBeenCalledTimes(1)
+    expect(google.removeAccount).not.toHaveBeenCalled()
+    expect(registry.list()).toEqual([{ id: 'g9', provider: 'google', email: 'nueva@gmail.com' }])
+  })
+
+  it('waits for the startup migration to finish before signing in a new account', async () => {
+    let release!: () => void
+    const { service, google } = await makeService({
+      skipInit: true,
+      migrate: () => new Promise<void>((resolve) => (release = resolve))
+    })
+    const init = service.init()
+
+    const adding = service.addAccount('google')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(google.addAccount).not.toHaveBeenCalled()
+
+    release()
+    await init
+    await adding
+    expect(google.addAccount).toHaveBeenCalledTimes(1)
+  })
+
   it('rejects adding an account for a provider that is not configured', async () => {
     const { service, microsoft } = await makeService()
     microsoft.configured = false
@@ -350,6 +414,53 @@ describe('NarsilService with several accounts', () => {
     expect(order).toEqual(['migrate'])
     expect(service.inboxItems().map((i) => i.key)).toEqual(['g1:m1'])
     expect(service.status().lastError).toContain('offline')
+  })
+})
+
+describe('NarsilService startup errors', () => {
+  it('clears the migration error once a later start migrates successfully', async () => {
+    let fail = true
+    const { service } = await makeService({
+      migrate: async () => {
+        if (fail) throw new Error('offline')
+      }
+    })
+    expect(service.status().lastError).toBe(
+      'No se pudo migrar tu cuenta de Google anterior (se reintentará al reiniciar): offline'
+    )
+
+    fail = false
+    await service.init()
+
+    expect(service.status().lastError).toBeUndefined()
+  })
+
+  it('labels a damaged account list as damaged, not as a failed migration', async () => {
+    const { service } = await makeService({
+      accounts: [],
+      secrets: { accounts: 'not json' },
+      migrate: async () => {
+        throw new Error('La lista de cuentas está dañada.')
+      }
+    })
+
+    expect(service.status().lastError).toBe('La lista de cuentas está dañada.')
+  })
+
+  it('keeps connecting the other accounts when one account has unreadable credentials', async () => {
+    const { service, google } = await makeService({
+      accounts: [ANA, BETO],
+      prepare: ({ google }) => google.corrupt.add('g1')
+    })
+    google.box('g2').ids = ['m2']
+    fake.triage.mockResolvedValue(TRIAGE)
+
+    await service.refresh()
+
+    expect(service.inboxItems().map((i) => i.key)).toEqual(['g2:m2'])
+    expect(service.status().lastError).toBe(
+      'ana@gmail.com: no se pudieron leer sus credenciales (Unexpected token in JSON). Quita la cuenta y vuelve a agregarla.'
+    )
   })
 })
 

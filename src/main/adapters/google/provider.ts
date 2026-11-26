@@ -2,7 +2,7 @@ import { shell } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { OAuth2Client, type Credentials } from 'google-auth-library'
 import type { AccountConnection, AddedAccount, ProviderAuth } from '../../app/ports'
-import type { SecretStore } from '../../app/accounts'
+import { LEGACY_GOOGLE_ACCOUNT_ID, type SecretStore } from '../../app/accounts'
 import { parseClientFile, signInWithBrowser, type ClientConfig } from '../googleAuth'
 import { GmailService, fetchProfileEmail } from '../gmail'
 import { CalendarService } from '../calendar'
@@ -101,6 +101,9 @@ export class GoogleProvider implements ProviderAuth {
       }
     }
     this.store.delete(name)
+    // A migration interrupted before its last step leaves the same tokens in the legacy secret;
+    // without this the next start would migrate the removed account back.
+    if (accountId === LEGACY_GOOGLE_ACCOUNT_ID) this.store.delete('google-tokens')
   }
 
   connect(accountId: string): AccountConnection | null {

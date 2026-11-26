@@ -94,8 +94,15 @@ export class NarsilService {
   private meetings: Meeting[] = []
   private readonly firedReminders = new Set<string>()
   private readonly timers: NodeJS.Timeout[] = []
-  /** Current problems, keyed by source (`${accountId}:mail`, `${accountId}:calendar`, `startup`). */
+  /**
+   * Current problems, keyed by source (`${accountId}:mail`, `${accountId}:calendar`,
+   * `${accountId}:connect`, `migration`, `startup`).
+   */
   private readonly errors = new Map<string, string>()
+  /** The latest init() run; sign-ins wait for it so they never race the startup migration. */
+  private initRun: Promise<void> | null = null
+  /** One sign-in per provider kind; a second click joins it instead of starting another. */
+  private readonly adding = new Map<ProviderKind, Promise<void>>()
   private readonly inboxBusy = new Set<string>()
   private ruleList: Rule[]
   private activity: RuleActivity[] = []
@@ -122,15 +129,25 @@ export class NarsilService {
   }
 
   /** Runs the startup migration, then connects every stored account. Called by start(). */
-  async init(): Promise<void> {
+  init(): Promise<void> {
+    const run = this.runInit()
+    this.initRun = run
+    return run
+  }
+
+  private async runInit(): Promise<void> {
     if (this.migrate) {
       try {
         await this.migrate()
+        this.errors.delete('migration')
       } catch (error) {
-        this.errors.set('startup', `No se pudo migrar tu cuenta de Google anterior (se reintentará al reiniciar): ${message(error)}`)
+        // status() already reports a damaged account list; do not blame the migration for it.
+        if (this.accountListDamaged()) this.errors.delete('migration')
+        else this.errors.set('migration', `No se pudo migrar tu cuenta de Google anterior (se reintentará al reiniciar): ${message(error)}`)
       }
     }
     this.syncConnections()
+    this.errors.delete('startup')
     this.emitStatus()
   }
 
@@ -205,21 +222,37 @@ export class NarsilService {
     this.emitStatus()
   }
 
-  /** Signs in a new account in the browser, rejecting one whose email is already connected. */
-  async addAccount(kind: ProviderKind): Promise<void> {
+  /**
+   * Signs in a new account in the browser, rejecting one whose email is already connected.
+   * A call made while a sign-in of the same kind runs joins it and gets the same outcome.
+   */
+  addAccount(kind: ProviderKind): Promise<void> {
+    let pending = this.adding.get(kind)
+    if (!pending) {
+      pending = this.runAddAccount(kind).finally(() => this.adding.delete(kind))
+      this.adding.set(kind, pending)
+    }
+    return pending
+  }
+
+  private async runAddAccount(kind: ProviderKind): Promise<void> {
     const provider = this.providers[kind]
     if (!provider.isConfigured()) throw new Error(NOT_CONFIGURED[kind])
+    await this.initRun?.catch(() => undefined)
     const added = await provider.addAccount()
     const email = added.email.trim()
-    const duplicate = this.accounts
-      .list()
-      .some((a) => a.provider === kind && a.email.toLowerCase() === email.toLowerCase())
-    if (duplicate) {
-      await provider.removeAccount(added.accountId)
-      throw new Error(`La cuenta ${email} ya está conectada.`)
+    const accounts = this.accounts.list()
+    // The provider recognized an account that is already registered: never discard its credentials.
+    if (!accounts.some((a) => a.id === added.accountId)) {
+      const duplicate = accounts.some((a) => a.provider === kind && a.email.toLowerCase() === email.toLowerCase())
+      if (duplicate) {
+        await provider.removeAccount(added.accountId)
+        throw new Error(`La cuenta ${email} ya está conectada.`)
+      }
+      this.accounts.add({ id: added.accountId, provider: kind, email })
     }
-    this.accounts.add({ id: added.accountId, provider: kind, email })
     this.syncConnections()
+    this.errors.delete('startup')
     this.emitStatus()
     await this.refresh()
   }
@@ -272,19 +305,45 @@ export class NarsilService {
     return { tracked, mail: connected.connection.mail }
   }
 
+  /** True when the stored account list cannot be read; status() reports it. */
+  private accountListDamaged(): boolean {
+    try {
+      this.accounts.list()
+      return false
+    } catch {
+      return true
+    }
+  }
+
   /** Connects stored accounts that are not connected yet and drops removed ones. */
   private syncConnections(): void {
-    const accounts = this.accounts.list()
+    let accounts: Account[]
+    try {
+      accounts = this.accounts.list()
+    } catch {
+      return // A damaged list is reported by status(); keep the current connections.
+    }
     const ids = new Set(accounts.map((a) => a.id))
     for (const id of [...this.connections.keys()]) if (!ids.has(id)) this.disconnect(id)
     for (const account of accounts) {
       if (this.connections.has(account.id)) continue
-      const connection = this.providers[account.provider].connect(account.id)
+      const source = `${account.id}:connect`
+      let connection: AccountConnection | null
+      try {
+        connection = this.providers[account.provider].connect(account.id)
+      } catch (error) {
+        // One unreadable credential file must not keep the other accounts from connecting.
+        this.errors.set(
+          source,
+          `${account.email}: no se pudieron leer sus credenciales (${message(error)}). Quita la cuenta y vuelve a agregarla.`
+        )
+        continue
+      }
       if (connection) {
         this.connections.set(account.id, { account, connection })
-        this.errors.delete(`${account.id}:connect`)
+        this.errors.delete(source)
       } else {
-        this.errors.set(`${account.id}:connect`, `${account.email}: faltan sus credenciales. Quita la cuenta y vuelve a agregarla.`)
+        this.errors.set(source, `${account.email}: faltan sus credenciales. Quita la cuenta y vuelve a agregarla.`)
       }
     }
   }

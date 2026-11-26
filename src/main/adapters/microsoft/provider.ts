@@ -4,6 +4,7 @@ import {
   InteractionRequiredAuthError,
   PublicClientApplication,
   type AccountInfo,
+  type AuthenticationResult,
   type ICachePlugin
 } from '@azure/msal-node'
 import type { AccountConnection, AddedAccount, ProviderAuth } from '../../app/ports'
@@ -26,6 +27,8 @@ const SUCCESS_PAGE =
 const ERROR_PAGE =
   '<!doctype html><meta charset="utf-8"><title>Narsil</title><h2>Narsil no pudo conectarse a Microsoft.</h2><p>Ya puedes cerrar esta pestaña y volver a intentarlo.</p>'
 
+const ACCOUNT_PREFIX = 'microsoft-account.'
+
 function accountSecret(accountId: string): SecretName {
   return `microsoft-account.${accountId}`
 }
@@ -34,10 +37,12 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+class SignInTimeoutError extends Error {}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), ms)
+    timer = setTimeout(() => reject(new SignInTimeoutError(message)), ms)
   })
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
 }
@@ -89,7 +94,8 @@ export class MicrosoftProvider implements ProviderAuth {
       }
       const homeAccountId = this.store.get(secret)
       const app = this.getApp()
-      if (homeAccountId && app) {
+      // Another mapping may share the MSAL account; removing it would sign that one out too.
+      if (homeAccountId && app && !this.mappedAccountId(homeAccountId, accountId)) {
         try {
           const cache = app.getTokenCache()
           const account = await cache.getAccountByHomeId(homeAccountId)
@@ -122,26 +128,24 @@ export class MicrosoftProvider implements ProviderAuth {
     const app = this.getApp()
     if (!app) throw new Error('Primero configura el Application (client) ID de Microsoft.')
 
-    let result
+    const interactive = app.acquireTokenInteractive({
+      scopes: MICROSOFT_SCOPES,
+      prompt: 'select_account',
+      openBrowser: async (url) => {
+        try {
+          await shell.openExternal(url)
+        } catch (error) {
+          throw new Error(`No se pudo abrir tu navegador: ${errorText(error)}`)
+        }
+      },
+      successTemplate: SUCCESS_PAGE,
+      errorTemplate: ERROR_PAGE
+    })
+    let result: AuthenticationResult
     try {
-      result = await withTimeout(
-        app.acquireTokenInteractive({
-          scopes: MICROSOFT_SCOPES,
-          prompt: 'select_account',
-          openBrowser: async (url) => {
-            try {
-              await shell.openExternal(url)
-            } catch (error) {
-              throw new Error(`No se pudo abrir tu navegador: ${errorText(error)}`)
-            }
-          },
-          successTemplate: SUCCESS_PAGE,
-          errorTemplate: ERROR_PAGE
-        }),
-        LOGIN_TIMEOUT_MS,
-        'Se agotó el tiempo para iniciar sesión en Microsoft.'
-      )
+      result = await withTimeout(interactive, LOGIN_TIMEOUT_MS, 'Se agotó el tiempo para iniciar sesión en Microsoft.')
     } catch (error) {
+      if (error instanceof SignInTimeoutError) this.discardLateSignIn(app, interactive)
       throw new Error(`Falló el inicio de sesión en Microsoft: ${errorText(error)}`)
     }
 
@@ -150,10 +154,40 @@ export class MicrosoftProvider implements ProviderAuth {
     const email = (await this.mailboxAddress(result.accessToken)) ?? account.username
     if (!email) throw new Error('No se pudo leer la dirección de correo de la cuenta de Microsoft.')
 
+    // The same Microsoft account signed in again keeps its id, whatever address /me returned.
+    const existing = this.mappedAccountId(account.homeAccountId)
+    if (existing) return { accountId: existing, email }
+
     const accountId = randomUUID()
     this.store.set(accountSecret(accountId), account.homeAccountId)
     this.unconnected.add(accountId)
     return { accountId, email }
+  }
+
+  /** The Narsil account id mapped to an MSAL `homeAccountId`, ignoring `except`. */
+  private mappedAccountId(homeAccountId: string, except?: string): string | null {
+    for (const name of this.store.list(ACCOUNT_PREFIX)) {
+      const id = name.slice(ACCOUNT_PREFIX.length)
+      if (id && id !== except && this.store.get(name) === homeAccountId) return id
+    }
+    return null
+  }
+
+  /**
+   * MSAL keeps its loopback server waiting after our timeout. If the user still finishes that
+   * sign-in, MSAL caches an account Narsil never mapped: remove it, unless a mapping uses it.
+   */
+  private discardLateSignIn(app: PublicClientApplication, interactive: Promise<AuthenticationResult>): void {
+    interactive
+      .then(async (late) => {
+        const account = late?.account
+        if (!account) return
+        // A newer sign-in may be about to map this same account; decide once it settles.
+        await this.pending?.catch(() => undefined)
+        if (this.mappedAccountId(account.homeAccountId)) return
+        await app.getTokenCache().removeAccount(account)
+      })
+      .catch(() => undefined)
   }
 
   /** The mailbox address from `/me`; personal accounts often have no `mail`, so it may be undefined. */

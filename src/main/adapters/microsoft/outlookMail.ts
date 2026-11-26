@@ -7,6 +7,16 @@ const MAX_MESSAGES = 20
 const LOOKBACK_MS = 2 * 24 * 60 * 60_000
 const MESSAGE_FIELDS = 'id,conversationId,subject,from,replyTo,bodyPreview,body,receivedDateTime,internetMessageId'
 
+/** Plain text as HTML: escapes markup characters and turns line breaks into `<br>`. */
+function textToHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/\r\n|\r|\n/g, '<br>')
+}
+
 interface MessageList {
   value?: Array<{ id?: string | null; receivedDateTime?: string | null }>
 }
@@ -60,9 +70,14 @@ export class OutlookMail implements MailProvider {
     })
   }
 
-  /** Graph's reply keeps the conversation, recipients and subject of the original message. */
+  /**
+   * Graph's reply keeps the conversation, recipients and subject of the original message.
+   * Graph reads `comment` as HTML, so the plain text is escaped and its line breaks kept.
+   */
   async reply(email: ParsedEmail, body: string): Promise<void> {
-    await this.graph.request('POST', `/me/messages/${pathSegment(email.summary.id)}/reply`, { body: { comment: body } })
+    await this.graph.request('POST', `/me/messages/${pathSegment(email.summary.id)}/reply`, {
+      body: { comment: textToHtml(body) }
+    })
     await this.markRead(email.summary.id)
   }
 

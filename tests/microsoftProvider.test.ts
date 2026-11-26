@@ -38,9 +38,11 @@ function fakeStore(initial: Record<string, string> = {}): SecureStore {
   const data = new Map(Object.entries(initial))
   return {
     get: (name: string) => data.get(name) ?? null,
+    getStrict: (name: string) => data.get(name) ?? null,
     set: (name: string, value: string) => void data.set(name, value),
     delete: (name: string) => void data.delete(name),
-    has: (name: string) => data.has(name)
+    has: (name: string) => data.has(name),
+    list: (prefix: string) => [...data.keys()].filter((name) => name.startsWith(prefix))
   } as unknown as SecureStore
 }
 
@@ -146,8 +148,10 @@ describe('MicrosoftProvider accounts', () => {
     expect(store.has('microsoft-account.acc-1')).toBe(false)
   })
 
-  it('discards a just-added duplicate without removing the shared MSAL cache account', async () => {
-    msal.acquireTokenInteractive.mockResolvedValue({ accessToken: 'secret-token', account: msal.account })
+  it('discards a just-added duplicate without removing its MSAL cache account', async () => {
+    // A different MSAL account with the same address: the core rejects it by email.
+    const other = { homeAccountId: 'home-2', username: 'ana@contoso.com' }
+    msal.acquireTokenInteractive.mockResolvedValue({ accessToken: 'secret-token', account: other })
     fetchMock.mockImplementation(async () => respond(200, { mail: 'ana@contoso.com' }))
     const store = connectedStore()
     const provider = new MicrosoftProvider(store)
@@ -159,6 +163,73 @@ describe('MicrosoftProvider accounts', () => {
     expect(msal.cache.removeAccount).not.toHaveBeenCalled()
     expect(store.has(`microsoft-account.${added.accountId}`)).toBe(false)
     expect(provider.connect('acc-1')).not.toBeNull()
+  })
+
+  it('returns the existing account id when the same Microsoft account signs in again', async () => {
+    msal.acquireTokenInteractive.mockResolvedValue({ accessToken: 'secret-token', account: msal.account })
+    // The first /me answers with the work address, the second fails: the emails differ.
+    fetchMock
+      .mockResolvedValueOnce(respond(200, { mail: 'ana.perez@contoso.com' }))
+      .mockResolvedValueOnce(respond(503, {}))
+    const store = fakeStore({ 'microsoft-client': CLIENT_ID })
+    const provider = new MicrosoftProvider(store)
+
+    const a = await provider.addAccount()
+    provider.connect(a.accountId)
+    const b = await provider.addAccount()
+
+    expect(b).toEqual({ accountId: a.accountId, email: 'ana@outlook.com' })
+    expect(store.list('microsoft-account.')).toEqual([`microsoft-account.${a.accountId}`])
+    expect(msal.cache.removeAccount).not.toHaveBeenCalled()
+  })
+
+  it('keeps the MSAL cache account while another mapping still uses it', async () => {
+    const store = fakeStore({
+      'microsoft-client': CLIENT_ID,
+      'microsoft-account.acc-1': 'home-1',
+      'microsoft-account.acc-2': 'home-1'
+    })
+    const provider = new MicrosoftProvider(store)
+
+    await provider.removeAccount('acc-1')
+
+    expect(msal.cache.removeAccount).not.toHaveBeenCalled()
+    expect(store.has('microsoft-account.acc-1')).toBe(false)
+    expect(provider.connect('acc-2')).not.toBeNull()
+  })
+
+  it('removes a sign-in that finishes after the timeout from the MSAL cache', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    let finish: (value: unknown) => void = () => {}
+    msal.acquireTokenInteractive.mockImplementation(() => new Promise((resolve) => (finish = resolve)))
+    const store = fakeStore({ 'microsoft-client': CLIENT_ID })
+    const provider = new MicrosoftProvider(store)
+
+    const failure = expect(provider.addAccount()).rejects.toThrow(
+      'Falló el inicio de sesión en Microsoft: Se agotó el tiempo para iniciar sesión en Microsoft.'
+    )
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+    await failure
+
+    const late = { homeAccountId: 'home-late', username: 'tarde@outlook.com' }
+    finish({ accessToken: 'late-token', account: late })
+    await vi.waitFor(() => expect(msal.cache.removeAccount).toHaveBeenCalledWith(late))
+    expect(store.list('microsoft-account.')).toEqual([])
+  })
+
+  it('keeps a late sign-in in the MSAL cache when a Narsil account already maps to it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    let finish: (value: unknown) => void = () => {}
+    msal.acquireTokenInteractive.mockImplementation(() => new Promise((resolve) => (finish = resolve)))
+    const provider = new MicrosoftProvider(connectedStore())
+
+    const failure = expect(provider.addAccount()).rejects.toThrow('Se agotó el tiempo')
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+    await failure
+
+    finish({ accessToken: 'late-token', account: msal.account })
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(msal.cache.removeAccount).not.toHaveBeenCalled()
   })
 
   it('never throws for an unknown account', async () => {
@@ -200,6 +271,15 @@ describe('Outlook mail through Microsoft Graph', () => {
       { method: 'POST', url: `${GRAPH}/me/messages/m1/reply`, body: { comment: 'Gracias, lo reviso.' } },
       { method: 'PATCH', url: `${GRAPH}/me/messages/m1`, body: { isRead: true } }
     ])
+  })
+
+  it('sends the reply text as escaped HTML with line breaks, since Graph reads the comment as HTML', async () => {
+    fetchMock.mockImplementation(async (_url, init) => respond(init?.method === 'POST' ? 202 : 200))
+    const email = { summary: { id: 'm1' } } as ParsedEmail
+    await connect().mail.reply(email, 'Si a < b & "c" > d,\nte aviso.\r\nSaludos')
+    expect(calls()[0]?.body).toEqual({
+      comment: 'Si a &lt; b &amp; &quot;c&quot; &gt; d,<br>te aviso.<br>Saludos'
+    })
   })
 
   it('rejects a non-2xx response with the status and the Graph message, never the token', async () => {
