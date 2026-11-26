@@ -26,6 +26,44 @@ export interface Triage {
   replies: ReplyOption[]
 }
 
+export type RuleAction = Exclude<EmailAction, 'reply'>
+
+/** Case-insensitive "contains" checks; an empty string means no condition on that field. */
+export interface RuleConditions {
+  from: string
+  subject: string
+  body: string
+}
+
+export interface Rule {
+  id: string
+  name: string
+  enabled: boolean
+  conditions: RuleConditions
+  action: RuleAction
+}
+
+/** A rule as the user edits it; without `id` it is a new rule. */
+export interface RuleInput {
+  id?: string
+  name: string
+  enabled: boolean
+  conditions: RuleConditions
+  action: RuleAction
+}
+
+/** One action a rule took (or tried to take) on an email. */
+export interface RuleActivity {
+  id: string
+  ruleName: string
+  action: RuleAction
+  from: string
+  subject: string
+  /** ISO 8601 timestamp. */
+  at: string
+  error?: string
+}
+
 export interface InboxItem {
   email: EmailSummary
   triage: Triage | null
@@ -76,6 +114,12 @@ export interface NarsilApi {
   applyAction(emailId: string, action: Exclude<EmailAction, 'reply'>): Promise<ActionResult>
   sendReply(emailId: string, body: string): Promise<ActionResult>
   setExpanded(expanded: boolean): Promise<void>
+  getRules(): Promise<Rule[]>
+  saveRule(input: RuleInput): Promise<ActionResult>
+  deleteRule(id: string): Promise<ActionResult>
+  getRuleActivity(): Promise<RuleActivity[]>
+  onRulesChanged(listener: (rules: Rule[]) => void): () => void
+  onRuleActivityChanged(listener: (activity: RuleActivity[]) => void): () => void
   onInboxChanged(listener: (items: InboxItem[]) => void): () => void
   onMeetingsChanged(listener: (meetings: Meeting[]) => void): () => void
   onReminder(listener: (alert: ReminderAlert) => void): () => void
@@ -94,6 +138,12 @@ export const IPC = {
   applyAction: 'narsil:apply-action',
   sendReply: 'narsil:send-reply',
   setExpanded: 'narsil:set-expanded',
+  getRules: 'narsil:get-rules',
+  saveRule: 'narsil:save-rule',
+  deleteRule: 'narsil:delete-rule',
+  getRuleActivity: 'narsil:get-rule-activity',
+  rulesChanged: 'narsil:rules-changed',
+  ruleActivityChanged: 'narsil:rule-activity-changed',
   inboxChanged: 'narsil:inbox-changed',
   meetingsChanged: 'narsil:meetings-changed',
   reminder: 'narsil:reminder',

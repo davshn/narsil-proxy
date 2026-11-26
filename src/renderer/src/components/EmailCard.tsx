@@ -20,6 +20,7 @@ interface EmailCardProps {
   item: InboxItem
   onAction(id: string, action: QuickAction): Promise<string | null>
   onReply(id: string, body: string): Promise<string | null>
+  onCreateRule(from: string): void
 }
 
 function address(mailbox: string): string {
@@ -31,7 +32,7 @@ function senderName(from: string): string {
   return match?.[1] ?? from
 }
 
-export function EmailCard({ item, onAction, onReply }: EmailCardProps): React.JSX.Element {
+export function EmailCard({ item, onAction, onReply, onCreateRule }: EmailCardProps): React.JSX.Element {
   const { email, triage } = item
   const [draft, setDraft] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -123,6 +124,14 @@ export function EmailCard({ item, onAction, onReply }: EmailCardProps): React.JS
 
       {draft === null && (
         <div className="mail__actions">
+          <button
+            type="button"
+            className="link-btn mail__rule"
+            title="Crear una regla para los correos de este remitente"
+            onClick={() => onCreateRule(email.from)}
+          >
+            Crear regla
+          </button>
           {quick.map((action) => (
             <button
               key={action}

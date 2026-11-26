@@ -5,9 +5,10 @@ import { z } from 'zod'
 import { IPC, type ActionResult } from '@shared/types'
 import { SecureStore } from './adapters/secureStore'
 import { NarsilService } from './app/narsilService'
+import { RulesFileStore } from './adapters/rulesStore'
 
 const COLLAPSED = { width: 150, height: 170 }
-const EXPANDED = { width: 420, height: 640 }
+const EXPANDED = { width: 460, height: 660 }
 const MARGIN = 16
 
 let win: BrowserWindow | null = null
@@ -123,6 +124,14 @@ const EmailId = z.string().min(1).max(256)
 const ActionSchema = z.enum(['archive', 'delete', 'save'])
 const ReplyBody = z.string().min(1).max(50_000)
 const ApiKey = z.string().max(500)
+const Condition = z.string().max(200)
+const RuleInputSchema = z.object({
+  id: z.string().max(64).optional(),
+  name: z.string().max(120),
+  enabled: z.boolean(),
+  action: ActionSchema,
+  conditions: z.object({ from: Condition, subject: Condition, body: Condition })
+})
 
 function registerIpc(svc: NarsilService): void {
   ipcMain.handle(IPC.getStatus, () => svc.status())
@@ -150,6 +159,10 @@ function registerIpc(svc: NarsilService): void {
       svc.importGoogleClient(await readFile(path, 'utf8'))
     })
   )
+  ipcMain.handle(IPC.getRules, () => svc.rules())
+  ipcMain.handle(IPC.getRuleActivity, () => svc.ruleActivity())
+  ipcMain.handle(IPC.saveRule, (_e, input: unknown) => run(() => svc.saveRule(RuleInputSchema.parse(input))))
+  ipcMain.handle(IPC.deleteRule, (_e, id: unknown) => run(() => svc.deleteRule(z.string().min(1).max(64).parse(id))))
   ipcMain.handle(IPC.setExpanded, (_e, expanded: unknown) => {
     placeWindow(expanded === true ? EXPANDED : COLLAPSED)
   })
@@ -169,6 +182,8 @@ if (!app.requestSingleInstanceLock()) {
       inboxChanged: (items) => send(IPC.inboxChanged, items),
       meetingsChanged: (meetings) => send(IPC.meetingsChanged, meetings),
       statusChanged: (status) => send(IPC.statusChanged, status),
+      rulesChanged: (rules) => send(IPC.rulesChanged, rules),
+      activityChanged: (activity) => send(IPC.ruleActivityChanged, activity),
       reminder: (alert) => {
         send(IPC.reminder, alert)
         win?.showInactive()
@@ -179,7 +194,7 @@ if (!app.requestSingleInstanceLock()) {
           icon: trayIcon()
         }).show()
       }
-    })
+    }, new RulesFileStore())
     registerIpc(service)
     service.start()
   })

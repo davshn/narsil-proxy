@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AppStatus, InboxItem, Meeting, ReminderAlert } from '@shared/types'
+import type { AppStatus, InboxItem, Meeting, ReminderAlert, Rule, RuleActivity, RuleInput } from '@shared/types'
+import { ruleDraftFromEmail } from '@shared/rules'
 import { Shard } from './components/Shard'
 import { EmailCard } from './components/EmailCard'
 import { Meetings } from './components/Meetings'
 import { Setup } from './components/Setup'
+import { Rules } from './components/Rules'
 
-type Tab = 'mail' | 'meetings' | 'setup'
+type Tab = 'mail' | 'meetings' | 'rules' | 'setup'
 
 const EMPTY_STATUS: AppStatus = { hasGoogleClient: false, googleConnected: false, hasAnthropicKey: false }
 
@@ -21,6 +23,10 @@ export function App(): React.JSX.Element {
   const [expanded, setExpandedState] = useState(false)
   const [tab, setTab] = useState<Tab>('mail')
   const [refreshing, setRefreshing] = useState(false)
+  const [rules, setRules] = useState<Rule[]>([])
+  const [activity, setActivity] = useState<RuleActivity[]>([])
+  const [ruleDraft, setRuleDraft] = useState<RuleInput | null>(null)
+  const takeRuleDraft = useCallback(() => setRuleDraft(null), [])
 
   const setExpanded = useCallback((value: boolean) => {
     setExpandedState(value)
@@ -34,10 +40,14 @@ export function App(): React.JSX.Element {
     })
     void window.narsil.getInbox().then(setInbox)
     void window.narsil.getMeetings().then(setMeetings)
+    void window.narsil.getRules().then(setRules)
+    void window.narsil.getRuleActivity().then(setActivity)
     const offs = [
       window.narsil.onStatusChanged(setStatus),
       window.narsil.onInboxChanged(setInbox),
       window.narsil.onMeetingsChanged(setMeetings),
+      window.narsil.onRulesChanged(setRules),
+      window.narsil.onRuleActivityChanged(setActivity),
       window.narsil.onReminder((a) => {
         setAlert(a)
         setTab('meetings')
@@ -55,6 +65,11 @@ export function App(): React.JSX.Element {
   const onReply = useCallback(async (id: string, body: string) => {
     const result = await window.narsil.sendReply(id, body)
     return result.ok ? null : (result.error ?? 'No se pudo enviar la respuesta.')
+  }, [])
+
+  const onCreateRule = useCallback((from: string) => {
+    setRuleDraft(ruleDraftFromEmail(from))
+    setTab('rules')
   }, [])
 
   const needsAttention = inbox.length > 0 || alert !== null
@@ -87,6 +102,9 @@ export function App(): React.JSX.Element {
           </button>
           <button type="button" className="tab" aria-pressed={tab === 'meetings'} onClick={() => setTab('meetings')}>
             Reuniones
+          </button>
+          <button type="button" className="tab" aria-pressed={tab === 'rules'} onClick={() => setTab('rules')}>
+            Reglas
           </button>
           <button type="button" className="tab" aria-pressed={tab === 'setup'} onClick={() => setTab('setup')}>
             Ajustes
@@ -125,6 +143,9 @@ export function App(): React.JSX.Element {
       <section className="panel__body">
         {tab === 'setup' && <Setup status={status} />}
         {tab === 'meetings' && <Meetings meetings={meetings} />}
+        {tab === 'rules' && (
+          <Rules rules={rules} activity={activity} incomingDraft={ruleDraft} onDraftTaken={takeRuleDraft} />
+        )}
         {tab === 'mail' &&
           (!isReady(status) ? (
             <p className="empty">
@@ -136,7 +157,9 @@ export function App(): React.JSX.Element {
           ) : inbox.length === 0 ? (
             <p className="empty">No tienes correos sin leer de los últimos dos días.</p>
           ) : (
-            inbox.map((item) => <EmailCard key={item.email.id} item={item} onAction={onAction} onReply={onReply} />)
+            inbox.map((item) => (
+              <EmailCard key={item.email.id} item={item} onAction={onAction} onReply={onReply} onCreateRule={onCreateRule} />
+            ))
           ))}
       </section>
 

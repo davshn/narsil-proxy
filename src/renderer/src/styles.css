@@ -530,3 +530,146 @@ textarea {
   color: var(--danger);
   font-weight: 600;
 }
+
+/* ---------- Rules ---------- */
+
+.mail__rule {
+  margin-right: auto;
+  font-size: 13px;
+}
+
+.rules__head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.rule-form {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--surface);
+  border-radius: 10px;
+}
+
+.rule-form h3,
+.rules__subhead {
+  margin: 0;
+  font: 600 15px/1.3 var(--font-display);
+}
+
+.rules__subhead {
+  margin: 16px 4px 6px;
+}
+
+.rule-form__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.rule-form label {
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.rule-form input,
+.rule-form select {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--frost);
+  color: var(--ink);
+}
+
+.rule-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.rules__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.rule-list,
+.activity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rule {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+  border-left: 3px solid var(--ember);
+  border-radius: 4px 10px 10px 4px;
+}
+
+.rule--off {
+  border-left-color: var(--line);
+  opacity: 0.7;
+}
+
+.rule__text {
+  min-width: 0;
+}
+
+.rule__name {
+  display: block;
+  font-weight: 600;
+}
+
+.rule__when {
+  display: block;
+  font-size: 13px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.rule__controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.rule__toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.link-btn--danger {
+  color: var(--danger);
+}
+
+.activity__item {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 8px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.activity__item time {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.activity__item--error,
+.activity__error {
+  color: var(--danger);
+}

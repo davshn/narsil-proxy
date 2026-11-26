@@ -1,5 +1,18 @@
-import type { AppStatus, EmailAction, InboxItem, Meeting, ReminderAlert } from '@shared/types'
+import { randomUUID } from 'node:crypto'
+import type {
+  AppStatus,
+  EmailAction,
+  InboxItem,
+  Meeting,
+  ReminderAlert,
+  Rule,
+  RuleAction,
+  RuleActivity,
+  RuleInput
+} from '@shared/types'
+import { findMatchingRule, normalizeRule } from '@shared/rules'
 import type { ParsedEmail } from '../domain/email'
+import type { RulesRepository } from '../adapters/rulesStore'
 import { dueReminders } from '../domain/reminders'
 import type { SecureStore } from '../adapters/secureStore'
 import { GoogleAuth } from '../adapters/googleAuth'
@@ -10,12 +23,15 @@ import { ClaudeTriage, describeClaudeError } from '../adapters/claude'
 const INBOX_POLL_MS = 60_000
 const CALENDAR_POLL_MS = 5 * 60_000
 const REMINDER_TICK_MS = 15_000
+const MAX_ACTIVITY = 50
 
 export interface NarsilEvents {
   inboxChanged(items: InboxItem[]): void
   meetingsChanged(meetings: Meeting[]): void
   reminder(alert: ReminderAlert): void
   statusChanged(status: AppStatus): void
+  rulesChanged(rules: Rule[]): void
+  activityChanged(activity: RuleActivity[]): void
 }
 
 /** A failed triage is retried on later polls up to this many attempts in total. */
@@ -39,12 +55,16 @@ export class NarsilService {
   private readonly timers: NodeJS.Timeout[] = []
   private lastError: string | undefined
   private inboxBusy = false
+  private ruleList: Rule[]
+  private activity: RuleActivity[] = []
 
   constructor(
     private readonly store: SecureStore,
-    private readonly events: NarsilEvents
+    private readonly events: NarsilEvents,
+    private readonly rulesRepo: RulesRepository
   ) {
     this.auth = new GoogleAuth(store)
+    this.ruleList = rulesRepo.load()
   }
 
   start(): void {
@@ -80,6 +100,27 @@ export class NarsilService {
 
   upcomingMeetings(): Meeting[] {
     return this.meetings
+  }
+
+  rules(): Rule[] {
+    return this.ruleList
+  }
+
+  ruleActivity(): RuleActivity[] {
+    return this.activity
+  }
+
+  /** Creates or updates a rule, persists it, then applies it to the emails already listed. */
+  async saveRule(input: RuleInput): Promise<void> {
+    const id = input.id && this.ruleList.some((r) => r.id === input.id) ? input.id : randomUUID()
+    const rule = normalizeRule(input, id)
+    const exists = this.ruleList.some((r) => r.id === id)
+    this.setRules(exists ? this.ruleList.map((r) => (r.id === id ? rule : r)) : [...this.ruleList, rule])
+    await this.applyRulesToInbox()
+  }
+
+  deleteRule(id: string): void {
+    this.setRules(this.ruleList.filter((r) => r.id !== id))
   }
 
   async refresh(): Promise<void> {
@@ -127,9 +168,7 @@ export class NarsilService {
   async applyAction(emailId: string, action: Exclude<EmailAction, 'reply'>): Promise<void> {
     const gmail = this.requireGmail()
     if (!this.inbox.has(emailId)) throw new Error('Este correo ya no está en la lista.')
-    if (action === 'archive') await gmail.archive(emailId)
-    else if (action === 'delete') await gmail.trash(emailId)
-    else await gmail.save(emailId)
+    await this.perform(gmail, emailId, action)
     this.removeFromInbox(emailId)
   }
 
@@ -146,6 +185,59 @@ export class NarsilService {
     const client = this.auth.getAuthorizedClient()
     this.gmail = client ? new GmailService(client) : null
     this.calendar = client ? new CalendarService(client) : null
+  }
+
+  private async perform(gmail: GmailService, emailId: string, action: RuleAction): Promise<void> {
+    if (action === 'archive') await gmail.archive(emailId)
+    else if (action === 'delete') await gmail.trash(emailId)
+    else await gmail.save(emailId)
+  }
+
+  private setRules(rules: Rule[]): void {
+    this.rulesRepo.save(rules)
+    this.ruleList = rules
+    this.events.rulesChanged(rules)
+  }
+
+  /** Runs the first matching rule on an email. Returns true when the email was handled. */
+  private async applyRules(gmail: GmailService, parsed: ParsedEmail): Promise<boolean> {
+    const rule = findMatchingRule(this.ruleList, {
+      from: parsed.summary.from,
+      subject: parsed.summary.subject,
+      body: parsed.bodyText || parsed.summary.snippet
+    })
+    if (!rule) return false
+    const entry: RuleActivity = {
+      id: randomUUID(),
+      ruleName: rule.name,
+      action: rule.action,
+      from: parsed.summary.from,
+      subject: parsed.summary.subject,
+      at: new Date().toISOString()
+    }
+    let handled = true
+    try {
+      await this.perform(gmail, parsed.summary.id, rule.action)
+    } catch (error) {
+      entry.error = error instanceof Error ? error.message : String(error)
+      handled = false
+    }
+    this.activity = [entry, ...this.activity].slice(0, MAX_ACTIVITY)
+    this.events.activityChanged(this.activity)
+    return handled
+  }
+
+  private async applyRulesToInbox(): Promise<void> {
+    const gmail = this.gmail
+    if (!gmail) return
+    let changed = false
+    for (const tracked of [...this.inbox.values()]) {
+      if (await this.applyRules(gmail, tracked.parsed)) {
+        this.inbox.delete(tracked.item.email.id)
+        changed = true
+      }
+    }
+    if (changed) this.emitInbox()
   }
 
   private requireGmail(): GmailService {
@@ -175,6 +267,8 @@ export class NarsilService {
         if (this.inbox.has(id)) continue
         try {
           const parsed = await this.gmail.getMessage(id)
+          // Rules run before triage, so handled emails never reach Claude.
+          if (await this.applyRules(this.gmail, parsed)) continue
           this.inbox.set(id, { parsed, item: { email: parsed.summary, triage: null }, attempts: 0, triaging: false })
           changed = true
         } catch {
