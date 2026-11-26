@@ -480,6 +480,16 @@ textarea {
   font: 600 15px/1.3 var(--font-display);
 }
 
+.mail__subject a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mail__subject a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .mail__summary {
   margin: 0 0 10px;
 }

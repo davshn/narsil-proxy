@@ -41,6 +41,17 @@ describe('parseMessage', () => {
     expect(parsed.references).toBe('<root@mail.example.com>')
   })
 
+  it('links to the message in Gmail on the web for the given mailbox', () => {
+    expect(parseMessage(baseMessage, 'acc-1', 'ana.user+x@gmail.com').summary.webLink).toBe(
+      'https://mail.google.com/mail/?authuser=ana.user%2Bx%40gmail.com#all/m1'
+    )
+  })
+
+  it('has no web link without the mailbox or the message id', () => {
+    expect(parseMessage(baseMessage, 'acc-1').summary.webLink).toBeUndefined()
+    expect(parseMessage({ ...baseMessage, id: null }, 'acc-1', 'ana@gmail.com').summary.webLink).toBeUndefined()
+  })
+
   it('prefers the text/plain part and decodes UTF-8', () => {
     expect(parseMessage(baseMessage, 'acc-1').bodyText).toBe('Hola, ¿nos vemos mañana?')
   })

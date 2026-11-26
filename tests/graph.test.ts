@@ -52,6 +52,16 @@ describe('parseGraphMessage', () => {
     expect(parsed.messageId).toBe('<abc@contoso.com>')
   })
 
+  it('keeps the https web link Outlook gives for the message', () => {
+    const link = 'https://outlook.office365.com/owa/?ItemID=AAMk-1&exvsurl=1&viewmodel=ReadMessageItem'
+    expect(parseGraphMessage(message({ webLink: link }), ACCOUNT).summary.webLink).toBe(link)
+  })
+
+  it('drops a web link that is missing or not https', () => {
+    expect(parseGraphMessage(message(), ACCOUNT).summary.webLink).toBeUndefined()
+    expect(parseGraphMessage(message({ webLink: 'javascript:alert(1)' }), ACCOUNT).summary.webLink).toBeUndefined()
+  })
+
   it('uses the Gmail placeholders for a missing subject and sender', () => {
     const parsed = parseGraphMessage(message({ subject: '   ', from: null }), ACCOUNT)
     expect(parsed.summary.subject).toBe('(Sin asunto)')

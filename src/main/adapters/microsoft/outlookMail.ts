@@ -7,7 +7,7 @@ import { pathSegment, type GraphClient } from './graphClient'
 const MAX_MESSAGES = 20
 const MAX_FOLDERS = '100'
 const DAY_MS = 24 * 60 * 60_000
-const MESSAGE_FIELDS = 'id,conversationId,subject,from,replyTo,bodyPreview,body,receivedDateTime,internetMessageId'
+const MESSAGE_FIELDS = 'id,conversationId,subject,from,replyTo,bodyPreview,body,receivedDateTime,internetMessageId,webLink'
 const FOLDER_FIELDS = 'id,displayName,childFolderCount'
 
 /** Graph's well-known folder names that are never offered as a place to save mail. */

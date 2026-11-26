@@ -81,7 +81,16 @@ export function EmailCard({
           {accountLabel}
         </span>
       )}
-      <h3 className="mail__subject">{email.subject}</h3>
+      <h3 className="mail__subject">
+        {/* The main process opens https links in the default browser and never in this window. */}
+        {email.webLink ? (
+          <a href={email.webLink} target="_blank" rel="noreferrer" title="Abrir este correo en el navegador">
+            {email.subject}
+          </a>
+        ) : (
+          email.subject
+        )}
+      </h3>
 
       {triage ? (
         <p className="mail__summary">

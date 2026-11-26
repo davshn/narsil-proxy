@@ -359,7 +359,7 @@ describe('Outlook mail through Microsoft Graph', () => {
     const [call] = calls()
     expect(call?.headers.Prefer).toBe('outlook.body-content-type="text"')
     expect(new URL(call?.url ?? '').searchParams.get('$select')).toBe(
-      'id,conversationId,subject,from,replyTo,bodyPreview,body,receivedDateTime,internetMessageId'
+      'id,conversationId,subject,from,replyTo,bodyPreview,body,receivedDateTime,internetMessageId,webLink'
     )
   })
 })

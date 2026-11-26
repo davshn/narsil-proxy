@@ -66,8 +66,16 @@ export function htmlToText(html: string): string {
     .trim()
 }
 
-/** Maps a Gmail message to a ParsedEmail that belongs to `accountId`. */
-export function parseMessage(message: GmailMessageLike, accountId: string): ParsedEmail {
+/** Opens the message in Gmail on the web, signed in as `mailbox` even when several accounts are. */
+export function gmailWebLink(id: string, mailbox: string): string {
+  return `https://mail.google.com/mail/?authuser=${encodeURIComponent(mailbox)}#all/${encodeURIComponent(id)}`
+}
+
+/**
+ * Maps a Gmail message to a ParsedEmail that belongs to `accountId`. With the account's
+ * `mailbox` address the summary also links to the message in Gmail on the web.
+ */
+export function parseMessage(message: GmailMessageLike, accountId: string, mailbox?: string): ParsedEmail {
   const payload = message.payload
   const from = header(payload, 'From') ?? '(Remitente desconocido)'
   const internal = Number(message.internalDate)
@@ -93,6 +101,7 @@ export function parseMessage(message: GmailMessageLike, accountId: string): Pars
     bodyText,
     replyTo
   }
+  if (message.id && mailbox) parsed.summary.webLink = gmailWebLink(message.id, mailbox)
   const messageId = header(payload, 'Message-ID')
   const references = header(payload, 'References')
   if (messageId) parsed.messageId = messageId

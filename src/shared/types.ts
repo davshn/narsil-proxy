@@ -60,6 +60,8 @@ export interface EmailSummary {
   snippet: string
   /** ISO 8601 timestamp. */
   receivedAt: string
+  /** An https link that opens this message in the provider's web mail, when known. */
+  webLink?: string
 }
 
 export interface ReplyOption {

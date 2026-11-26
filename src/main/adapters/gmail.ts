@@ -23,6 +23,7 @@ export async function fetchProfileEmail(auth: OAuth2Client): Promise<string> {
 /** Gmail for one connected account. */
 export class GmailService implements MailProvider {
   private readonly api: gmail_v1.Gmail
+  private mailboxRead: Promise<string | undefined> | undefined
 
   constructor(
     auth: OAuth2Client,
@@ -45,8 +46,23 @@ export class GmailService implements MailProvider {
   }
 
   async getMessage(id: string): Promise<ParsedEmail> {
-    const res = await this.api.users.messages.get({ userId: 'me', id, format: 'full' })
-    return parseMessage(res.data, this.accountId)
+    const [res, mailbox] = await Promise.all([this.api.users.messages.get({ userId: 'me', id, format: 'full' }), this.mailbox()])
+    return parseMessage(res.data, this.accountId, mailbox)
+  }
+
+  /**
+   * The mailbox address, read once, for links to Gmail on the web. A failed read only leaves
+   * messages without a link, and the next message tries again.
+   */
+  private mailbox(): Promise<string | undefined> {
+    this.mailboxRead ??= this.api.users.getProfile({ userId: 'me' }).then(
+      (res) => res.data.emailAddress ?? undefined,
+      () => {
+        this.mailboxRead = undefined
+        return undefined
+      }
+    )
+    return this.mailboxRead
   }
 
   /** Removes the message from the inbox and marks it read; it stays in All Mail. */

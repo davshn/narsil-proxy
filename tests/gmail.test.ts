@@ -6,8 +6,10 @@ const api = vi.hoisted(() => ({
   users: {
     messages: {
       list: vi.fn(async (_params: unknown) => ({ data: { messages: [{ id: 'm1' }, { id: 'm2' }] } })),
-      modify: vi.fn(async (_params: unknown) => ({ data: {} }))
+      modify: vi.fn(async (_params: unknown) => ({ data: {} })),
+      get: vi.fn(async (params: { id: string }) => ({ data: { id: params.id, threadId: 't1', payload: { headers: [] } } }))
     },
+    getProfile: vi.fn(async (_params: unknown) => ({ data: { emailAddress: 'me@gmail.com', historyId: '42' } })),
     labels: {
       list: vi.fn(async (_params: unknown) => ({ data: { labels: [] as unknown[] } })),
       create: vi.fn(async (_params: unknown) => ({ data: { id: 'Label_9', name: 'Facturas' } as { id?: string; name?: string } }))
@@ -36,6 +38,22 @@ describe('GmailService.listUnread', () => {
   ])('queries Gmail for %j with %s', async (settings, query) => {
     expect(await service().listUnread(settings)).toEqual(['m1', 'm2'])
     expect(api.users.messages.list).toHaveBeenCalledWith({ userId: 'me', q: query, maxResults: 20 })
+  })
+})
+
+describe('GmailService.getMessage', () => {
+  it('links each message to Gmail on the web, reading the mailbox address once', async () => {
+    const gmail = service()
+    expect((await gmail.getMessage('m1')).summary.webLink).toBe('https://mail.google.com/mail/?authuser=me%40gmail.com#all/m1')
+    expect((await gmail.getMessage('m2')).summary.webLink).toBe('https://mail.google.com/mail/?authuser=me%40gmail.com#all/m2')
+    expect(api.users.getProfile).toHaveBeenCalledTimes(1)
+  })
+
+  it('still returns the message without a link when the profile cannot be read', async () => {
+    api.users.getProfile.mockRejectedValueOnce(new Error('offline'))
+    const parsed = await service().getMessage('m1')
+    expect(parsed.summary.id).toBe('m1')
+    expect(parsed.summary.webLink).toBeUndefined()
   })
 })
 

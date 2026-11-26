@@ -16,6 +16,7 @@ export interface GraphMessageLike {
   body?: { contentType?: string | null; content?: string | null } | null
   receivedDateTime?: string | null
   internetMessageId?: string | null
+  webLink?: string | null
 }
 
 export interface GraphEventLike {
@@ -72,6 +73,8 @@ export function parseGraphMessage(message: GraphMessageLike, accountId: string):
     replyTo
   }
   if (message.internetMessageId) parsed.messageId = message.internetMessageId
+  const webLink = httpsLink(message.webLink)
+  if (webLink) parsed.summary.webLink = webLink
   return parsed
 }
 
