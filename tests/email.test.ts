@@ -72,8 +72,8 @@ describe('parseMessage', () => {
   it('uses placeholders when subject and sender are missing', () => {
     const bare = { id: 'm2', threadId: 't2', payload: { headers: [] } }
     const parsed = parseMessage(bare)
-    expect(parsed.summary.subject).toBe('(No subject)')
-    expect(parsed.summary.from).toBe('(Unknown sender)')
+    expect(parsed.summary.subject).toBe('(Sin asunto)')
+    expect(parsed.summary.from).toBe('(Remitente desconocido)')
     expect(parsed.bodyText).toBe('')
   })
 })

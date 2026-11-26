@@ -49,12 +49,12 @@ export function App(): React.JSX.Element {
 
   const onAction = useCallback(async (id: string, action: 'archive' | 'delete' | 'save') => {
     const result = await window.narsil.applyAction(id, action)
-    return result.ok ? null : (result.error ?? 'The action failed.')
+    return result.ok ? null : (result.error ?? 'La acción falló.')
   }, [])
 
   const onReply = useCallback(async (id: string, body: string) => {
     const result = await window.narsil.sendReply(id, body)
-    return result.ok ? null : (result.error ?? 'The reply could not be sent.')
+    return result.ok ? null : (result.error ?? 'No se pudo enviar la respuesta.')
   }, [])
 
   const needsAttention = inbox.length > 0 || alert !== null
@@ -62,12 +62,12 @@ export function App(): React.JSX.Element {
   if (!expanded) {
     return (
       <main className="dock">
-        <div className="dock__grip" title="Drag to move Narsil" />
+        <div className="dock__grip" title="Arrastra para mover a Narsil" />
         <button
           type="button"
           className="dock__avatar"
           onClick={() => setExpanded(true)}
-          aria-label={inbox.length > 0 ? `Open Narsil, ${inbox.length} emails waiting` : 'Open Narsil'}
+          aria-label={inbox.length > 0 ? `Abrir Narsil, ${inbox.length} correos pendientes` : 'Abrir Narsil'}
         >
           <Shard size={64} alert={needsAttention} />
           {inbox.length > 0 && <span className="dock__badge">{inbox.length}</span>}
@@ -81,18 +81,18 @@ export function App(): React.JSX.Element {
       <header className="panel__head">
         <Shard size={26} alert={needsAttention} />
         <h1 className="panel__title">Narsil</h1>
-        <nav className="tabs" aria-label="Sections">
+        <nav className="tabs" aria-label="Secciones">
           <button type="button" className="tab" aria-pressed={tab === 'mail'} onClick={() => setTab('mail')}>
-            Mail{inbox.length > 0 ? ` ${inbox.length}` : ''}
+            Correo{inbox.length > 0 ? ` ${inbox.length}` : ''}
           </button>
           <button type="button" className="tab" aria-pressed={tab === 'meetings'} onClick={() => setTab('meetings')}>
-            Meetings
+            Reuniones
           </button>
           <button type="button" className="tab" aria-pressed={tab === 'setup'} onClick={() => setTab('setup')}>
-            Setup
+            Ajustes
           </button>
         </nav>
-        <button type="button" className="icon-btn" onClick={() => setExpanded(false)} aria-label="Minimize Narsil">
+        <button type="button" className="icon-btn" onClick={() => setExpanded(false)} aria-label="Minimizar Narsil">
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
             <path d="M2 7h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
@@ -104,17 +104,17 @@ export function App(): React.JSX.Element {
           <div>
             <strong className="reminder__title">{alert.meeting.title}</strong>
             <span className="reminder__when">
-              Starts in {alert.minutesUntil} {alert.minutesUntil === 1 ? 'minute' : 'minutes'}
+              Empieza en {alert.minutesUntil} {alert.minutesUntil === 1 ? 'minuto' : 'minutos'}
             </span>
           </div>
           <div className="reminder__actions">
             {alert.meeting.link && (
               <a className="btn btn--primary" href={alert.meeting.link} target="_blank" rel="noreferrer">
-                Join call
+                Unirse a la llamada
               </a>
             )}
             <button type="button" className="btn btn--ghost" onClick={() => setAlert(null)}>
-              Dismiss
+              Descartar
             </button>
           </div>
         </div>
@@ -128,13 +128,13 @@ export function App(): React.JSX.Element {
         {tab === 'mail' &&
           (!isReady(status) ? (
             <p className="empty">
-              Finish setup so Narsil can read your inbox.{' '}
+              Termina la configuración para que Narsil pueda leer tu bandeja de entrada.{' '}
               <button type="button" className="link-btn" onClick={() => setTab('setup')}>
-                Open setup
+                Abrir ajustes
               </button>
             </p>
           ) : inbox.length === 0 ? (
-            <p className="empty">Your inbox has no unread mail from the last two days.</p>
+            <p className="empty">No tienes correos sin leer de los últimos dos días.</p>
           ) : (
             inbox.map((item) => <EmailCard key={item.email.id} item={item} onAction={onAction} onReply={onReply} />)
           ))}
@@ -151,7 +151,7 @@ export function App(): React.JSX.Element {
               void window.narsil.refresh().finally(() => setRefreshing(false))
             }}
           >
-            {refreshing ? 'Checking…' : 'Check now'}
+            {refreshing ? 'Revisando…' : 'Revisar ahora'}
           </button>
         </footer>
       )}

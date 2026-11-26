@@ -4,16 +4,16 @@ import type { EmailAction, InboxItem } from '@shared/types'
 type QuickAction = Exclude<EmailAction, 'reply'>
 
 const ACTION_LABEL: Record<EmailAction, string> = {
-  reply: 'Reply',
-  archive: 'Archive',
-  delete: 'Delete',
-  save: 'Save'
+  reply: 'Responder',
+  archive: 'Archivar',
+  delete: 'Eliminar',
+  save: 'Guardar'
 }
 
 const ACTION_HINT: Record<QuickAction, string> = {
-  archive: 'Remove from inbox, keep in All Mail',
-  delete: 'Move to Trash (recoverable for 30 days)',
-  save: 'Star and keep in inbox'
+  archive: 'Quitar de la bandeja de entrada y conservar en Todos',
+  delete: 'Mover a la papelera (recuperable durante 30 días)',
+  save: 'Destacar y mantener en la bandeja de entrada'
 }
 
 interface EmailCardProps {
@@ -66,15 +66,15 @@ export function EmailCard({ item, onAction, onReply }: EmailCardProps): React.JS
         <p className="mail__summary">
           {triage.summary}
           <span className="mail__advice">
-            Narsil suggests <strong>{ACTION_LABEL[triage.recommendedAction].toLowerCase()}</strong>: {triage.reason}
+            Narsil sugiere <strong>{ACTION_LABEL[triage.recommendedAction].toLowerCase()}</strong>: {triage.reason}
           </span>
         </p>
       ) : (
-        <p className="mail__summary mail__summary--pending">{item.triageError ?? 'Reading this email…'}</p>
+        <p className="mail__summary mail__summary--pending">{item.triageError ?? 'Leyendo este correo…'}</p>
       )}
 
       {triage && triage.replies.length > 0 && draft === null && (
-        <div className="mail__replies" role="group" aria-label="Suggested replies">
+        <div className="mail__replies" role="group" aria-label="Respuestas sugeridas">
           {triage.replies.map((reply, index) => (
             <button
               key={index}
@@ -87,7 +87,7 @@ export function EmailCard({ item, onAction, onReply }: EmailCardProps): React.JS
             </button>
           ))}
           <button type="button" className="pill pill--ghost" onClick={() => setDraft('')}>
-            Write my own
+            Escribir la mía
           </button>
         </div>
       )}
@@ -95,19 +95,19 @@ export function EmailCard({ item, onAction, onReply }: EmailCardProps): React.JS
       {draft !== null && (
         <div className="mail__draft">
           <p className={redirected ? 'mail__to mail__to--warn' : 'mail__to'}>
-            To: {email.replyTo}
-            {redirected && <span> (not the sender's address)</span>}
+            Para: {email.replyTo}
+            {redirected && <span> (no es la dirección del remitente)</span>}
           </p>
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             rows={6}
-            aria-label={`Reply to ${senderName(email.from)}`}
+            aria-label={`Respuesta a ${senderName(email.from)}`}
             autoFocus
           />
           <div className="mail__draft-actions">
             <button type="button" className="btn btn--ghost" onClick={() => setDraft(null)} disabled={busy}>
-              Cancel
+              Cancelar
             </button>
             <button
               type="button"
@@ -115,7 +115,7 @@ export function EmailCard({ item, onAction, onReply }: EmailCardProps): React.JS
               disabled={busy || !draft.trim()}
               onClick={() => void act(() => onReply(email.id, draft))}
             >
-              {busy ? 'Sending…' : 'Send reply'}
+              {busy ? 'Enviando…' : 'Enviar respuesta'}
             </button>
           </div>
         </div>

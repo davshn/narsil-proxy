@@ -126,7 +126,7 @@ export class NarsilService {
 
   async applyAction(emailId: string, action: Exclude<EmailAction, 'reply'>): Promise<void> {
     const gmail = this.requireGmail()
-    if (!this.inbox.has(emailId)) throw new Error('This email is no longer in the list.')
+    if (!this.inbox.has(emailId)) throw new Error('Este correo ya no está en la lista.')
     if (action === 'archive') await gmail.archive(emailId)
     else if (action === 'delete') await gmail.trash(emailId)
     else await gmail.save(emailId)
@@ -136,8 +136,8 @@ export class NarsilService {
   async sendReply(emailId: string, body: string): Promise<void> {
     const gmail = this.requireGmail()
     const tracked = this.inbox.get(emailId)
-    if (!tracked) throw new Error('This email is no longer in the list.')
-    if (!body.trim()) throw new Error('The reply is empty.')
+    if (!tracked) throw new Error('Este correo ya no está en la lista.')
+    if (!body.trim()) throw new Error('La respuesta está vacía.')
     await gmail.reply(tracked.parsed, body)
     this.removeFromInbox(emailId)
   }
@@ -149,7 +149,7 @@ export class NarsilService {
   }
 
   private requireGmail(): GmailService {
-    if (!this.gmail) throw new Error('Connect your Google account first.')
+    if (!this.gmail) throw new Error('Primero conecta tu cuenta de Google.')
     return this.gmail
   }
 
@@ -186,7 +186,7 @@ export class NarsilService {
       for (const tracked of [...this.inbox.values()]) {
         if (!tracked.item.triage && tracked.attempts < MAX_TRIAGE_ATTEMPTS) await this.triage(tracked)
       }
-      if (unreadable > 0) this.setError(`Gmail: could not read ${unreadable} email(s); retrying next check.`)
+      if (unreadable > 0) this.setError(`Gmail: no se pudieron leer ${unreadable} correo(s); se reintentará en la próxima revisión.`)
       else this.clearError()
     } catch (error) {
       this.setError(`Gmail: ${error instanceof Error ? error.message : String(error)}`)
@@ -199,7 +199,7 @@ export class NarsilService {
     if (tracked.triaging) return
     const key = this.anthropicKey()
     if (!key) {
-      tracked.item = { ...tracked.item, triageError: 'Add your Anthropic API key to get suggestions.' }
+      tracked.item = { ...tracked.item, triageError: 'Agrega tu API key de Anthropic para recibir sugerencias.' }
       this.emitInbox()
       return
     }
@@ -224,7 +224,7 @@ export class NarsilService {
       this.checkReminders()
       this.clearError()
     } catch (error) {
-      this.setError(`Calendar: ${error instanceof Error ? error.message : String(error)}`)
+      this.setError(`Calendario: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

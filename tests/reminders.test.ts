@@ -128,6 +128,6 @@ describe('toMeeting', () => {
   it('uses a placeholder title when the event has none', () => {
     expect(
       toMeeting({ id: 'e', start: { dateTime: '2026-11-26T15:00:00Z' }, end: { dateTime: '2026-11-26T16:00:00Z' } })?.title
-    ).toBe('(Untitled meeting)')
+    ).toBe('(Reunión sin título)')
   })
 })

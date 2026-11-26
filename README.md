@@ -4,16 +4,16 @@ Narsil is a small assistant that floats in the bottom-right corner of your Windo
 
 - watches your Gmail inbox for unread mail from the last two days (skipping the Promotions and Social tabs),
 - uses Claude to summarize each email, recommend **reply**, **save**, **archive** or **delete**, and draft up to three replies you can edit before sending,
-- reads your Google Calendar and reminds you **15 minutes** and again **5 minutes** before each meeting, with a Windows notification and a banner that has a "Join call" button.
+- reads your Google Calendar and reminds you **15 minutes** and again **5 minutes** before each meeting, with a Windows notification and a banner that has a "Unirse a la llamada" (join call) button. The interface is in Spanish.
 
 Nothing is sent, archived or deleted without your click.
 
 | Button | What it does in Gmail |
 | --- | --- |
-| Save | Stars the email and marks it read. It stays in the inbox. |
-| Archive | Removes it from the inbox and marks it read. It stays in All Mail. |
-| Delete | Moves it to Trash, where Gmail keeps it for 30 days. |
-| Send reply | Sends your reply in the same thread and marks the email read. |
+| Guardar (save) | Stars the email and marks it read. It stays in the inbox. |
+| Archivar (archive) | Removes it from the inbox and marks it read. It stays in All Mail. |
+| Eliminar (delete) | Moves it to Trash, where Gmail keeps it for 30 days. |
+| Enviar respuesta (send reply) | Sends your reply in the same thread and marks the email read. |
 
 ## Requirements
 
@@ -37,7 +37,7 @@ Keep that file private. Narsil asks for these permissions:
 - `gmail.send`: send the replies you approve
 - `calendar.readonly`: read your events
 
-While the consent screen is in "Testing" mode, Google expires the sign-in after 7 days and you will need to click **Connect Google** again. Setting the publishing status to **In production** removes that limit. Because Gmail scopes are restricted, Google then shows an "unverified app" warning at sign-in, which you can accept for your own account.
+While the consent screen is in "Testing" mode, Google expires the sign-in after 7 days and you will need to click **Conectar Google** again. Setting the publishing status to **In production** removes that limit. Because Gmail scopes are restricted, Google then shows an "unverified app" warning at sign-in, which you can accept for your own account.
 
 ## 2. Run Narsil
 
@@ -50,11 +50,11 @@ npm start
 
 The second command downloads the Electron runtime. Recent npm versions skip that download during `npm install`.
 
-Narsil appears as a steel shard above the taskbar. Click it to open the panel, then go to **Setup**:
+Narsil appears as a steel shard above the taskbar. Click it to open the panel, then go to **Ajustes** (settings):
 
-1. **Choose client file**: pick the JSON you downloaded.
-2. **Connect Google**: your browser opens. Sign in and allow access.
-3. **Save key**: paste your Anthropic API key. If `ANTHROPIC_API_KEY` is set in your environment, Narsil uses that instead.
+1. **Elegir archivo de cliente**: pick the JSON you downloaded.
+2. **Conectar Google**: your browser opens. Sign in and allow access.
+3. **Guardar clave**: paste your Anthropic API key. If `ANTHROPIC_API_KEY` is set in your environment, Narsil uses that instead.
 
 Secrets are encrypted with Windows DPAPI (Electron `safeStorage`) under `%APPDATA%\narsil\secrets`.
 

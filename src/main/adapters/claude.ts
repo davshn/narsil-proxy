@@ -26,19 +26,19 @@ export class ClaudeTriage {
     })
 
     if (response.stop_reason === 'refusal') {
-      throw new Error('Claude declined to analyze this email.')
+      throw new Error('Claude se negó a analizar este correo.')
     }
     if (!response.parsed_output) {
-      throw new Error(`Claude returned no usable triage (stop reason: ${response.stop_reason ?? 'unknown'}).`)
+      throw new Error(`Claude no devolvió un análisis utilizable (motivo de parada: ${response.stop_reason ?? 'unknown'}).`)
     }
     return normalizeTriage(response.parsed_output)
   }
 }
 
 export function describeClaudeError(error: unknown): string {
-  if (error instanceof Anthropic.AuthenticationError) return 'Your Anthropic API key was rejected.'
-  if (error instanceof Anthropic.RateLimitError) return 'Claude rate limit reached; Narsil will retry on the next check.'
-  if (error instanceof Anthropic.APIConnectionError) return 'Could not reach the Claude API.'
-  if (error instanceof Anthropic.APIError) return `Claude API error (${error.status ?? 'unknown'}).`
+  if (error instanceof Anthropic.AuthenticationError) return 'Tu API key de Anthropic fue rechazada.'
+  if (error instanceof Anthropic.RateLimitError) return 'Se alcanzó el límite de uso de Claude; Narsil reintentará en la próxima revisión.'
+  if (error instanceof Anthropic.APIConnectionError) return 'No se pudo conectar con la API de Claude.'
+  if (error instanceof Anthropic.APIError) return `Error de la API de Claude (${error.status ?? 'unknown'}).`
   return error instanceof Error ? error.message : String(error)
 }

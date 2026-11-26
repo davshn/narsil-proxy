@@ -41,7 +41,7 @@ export class GmailService {
   async reply(email: ParsedEmail, body: string): Promise<void> {
     const raw = buildReplyRaw({
       to: email.replyTo,
-      subject: email.summary.subject === '(No subject)' ? '' : email.summary.subject,
+      subject: email.summary.subject === '(Sin asunto)' ? '' : email.summary.subject,
       body,
       ...(email.messageId ? { inReplyTo: email.messageId } : {}),
       ...(email.references ? { references: email.references } : {})

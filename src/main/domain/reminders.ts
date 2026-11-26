@@ -31,7 +31,7 @@ export function toMeeting(event: CalendarEventLike): Meeting | null {
 
   const meeting: Meeting = {
     id: event.id,
-    title: event.summary?.trim() || '(Untitled meeting)',
+    title: event.summary?.trim() || '(Reunión sin título)',
     start: new Date(startRaw).toISOString(),
     end: new Date(endRaw).toISOString()
   }

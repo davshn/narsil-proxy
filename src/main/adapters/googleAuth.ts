@@ -27,7 +27,7 @@ interface ClientConfig {
 export function parseClientFile(json: string): ClientConfig {
   const parsed = ClientFileSchema.safeParse(JSON.parse(json))
   if (!parsed.success) {
-    throw new Error('This is not a Google OAuth "Desktop app" client file (expected an "installed" section).')
+    throw new Error('Este no es un archivo de cliente OAuth de Google tipo "App de escritorio" (falta la sección "installed").')
   }
   return { clientId: parsed.data.installed.client_id, clientSecret: parsed.data.installed.client_secret }
 }
@@ -73,7 +73,7 @@ export class GoogleAuth {
 
   private async runConnect(): Promise<void> {
     const client = this.getClient()
-    if (!client) throw new Error('Import your Google OAuth client file first.')
+    if (!client) throw new Error('Primero carga tu archivo de cliente OAuth de Google.')
 
     const { codeVerifier, codeChallenge } = await client.generateCodeVerifierAsync()
     const state = randomBytes(16).toString('hex')
@@ -133,7 +133,7 @@ export class GoogleAuth {
 
   private waitForCode(server: Server, state: string, openBrowser: () => Promise<void>): Promise<string> {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Google sign-in timed out.')), LOGIN_TIMEOUT_MS)
+      const timer = setTimeout(() => reject(new Error('Se agotó el tiempo para iniciar sesión en Google.')), LOGIN_TIMEOUT_MS)
       const fail = (error: Error): void => {
         clearTimeout(timer)
         reject(error)
@@ -149,16 +149,16 @@ export class GoogleAuth {
         const error = url.searchParams.get('error')
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
         if (error || !code) {
-          res.end('<h2>Narsil could not connect to Google.</h2><p>You can close this tab.</p>')
-          fail(new Error(`Google sign-in failed: ${error ?? 'no authorization code'}`))
+          res.end('<h2>Narsil no pudo conectarse a Google.</h2><p>Ya puedes cerrar esta pestaña.</p>')
+          fail(new Error(`Falló el inicio de sesión en Google: ${error ?? 'no se recibió código de autorización'}`))
           return
         }
-        res.end('<h2>Narsil is connected to Google.</h2><p>You can close this tab.</p>')
+        res.end('<h2>Narsil está conectado a Google.</h2><p>Ya puedes cerrar esta pestaña.</p>')
         clearTimeout(timer)
         resolve(code)
       })
       openBrowser().catch((error: unknown) =>
-        fail(new Error(`Could not open your browser: ${error instanceof Error ? error.message : String(error)}`))
+        fail(new Error(`No se pudo abrir tu navegador: ${error instanceof Error ? error.message : String(error)}`))
       )
     })
   }

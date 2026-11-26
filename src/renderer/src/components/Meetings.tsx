@@ -14,7 +14,7 @@ function dayLabel(iso: string): string {
 
 export function Meetings({ meetings }: { meetings: Meeting[] }): React.JSX.Element {
   if (meetings.length === 0) {
-    return <p className="empty">No meetings in the next 24 hours. Narsil will remind you 15 and 5 minutes before the next one.</p>
+    return <p className="empty">No tienes reuniones en las próximas 24 horas. Narsil te avisará 15 y 5 minutos antes de la siguiente.</p>
   }
   return (
     <ul className="meetings">
@@ -29,7 +29,7 @@ export function Meetings({ meetings }: { meetings: Meeting[] }): React.JSX.Eleme
             {m.location && <span className="meeting__place">{m.location}</span>}
             {m.link && (
               <a className="meeting__link" href={m.link} target="_blank" rel="noreferrer">
-                Join call
+                Unirse a la llamada
               </a>
             )}
           </div>

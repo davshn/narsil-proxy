@@ -88,12 +88,12 @@ function createTray(): void {
     const openAtLogin = app.getLoginItemSettings().openAtLogin
     tray?.setContextMenu(
       Menu.buildFromTemplate([
-        { label: 'Show Narsil', click: () => win?.showInactive() },
-        { label: 'Hide Narsil', click: () => win?.hide() },
-        { label: 'Check now', click: () => void service?.refresh() },
+        { label: 'Mostrar Narsil', click: () => win?.showInactive() },
+        { label: 'Ocultar Narsil', click: () => win?.hide() },
+        { label: 'Revisar ahora', click: () => void service?.refresh() },
         { type: 'separator' },
         {
-          label: 'Start with Windows',
+          label: 'Iniciar con Windows',
           type: 'checkbox',
           checked: openAtLogin,
           click: () => {
@@ -102,7 +102,7 @@ function createTray(): void {
           }
         },
         { type: 'separator' },
-        { label: 'Quit', click: () => app.quit() }
+        { label: 'Salir', click: () => app.quit() }
       ])
     )
   }
@@ -141,12 +141,12 @@ function registerIpc(svc: NarsilService): void {
   ipcMain.handle(IPC.importGoogleClient, () =>
     run(async () => {
       const result = await dialog.showOpenDialog({
-        title: 'Select your Google OAuth client file',
+        title: 'Selecciona el archivo de cliente OAuth de Google',
         filters: [{ name: 'JSON', extensions: ['json'] }],
         properties: ['openFile']
       })
       const path = result.filePaths[0]
-      if (result.canceled || !path) throw new Error('No file selected.')
+      if (result.canceled || !path) throw new Error('No se seleccionó ningún archivo.')
       svc.importGoogleClient(await readFile(path, 'utf8'))
     })
   )
@@ -174,8 +174,8 @@ if (!app.requestSingleInstanceLock()) {
         win?.showInactive()
         const time = new Date(alert.meeting.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         new Notification({
-          title: `${alert.meeting.title} in ${alert.minutesUntil} min`,
-          body: `Starts at ${time}${alert.meeting.location ? `, ${alert.meeting.location}` : ''}`,
+          title: `${alert.meeting.title} en ${alert.minutesUntil} min`,
+          body: `Empieza a las ${time}${alert.meeting.location ? `, ${alert.meeting.location}` : ''}`,
           icon: trayIcon()
         }).show()
       }

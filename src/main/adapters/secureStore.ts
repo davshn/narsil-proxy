@@ -27,7 +27,7 @@ export class SecureStore {
 
   set(name: SecretName, value: string): void {
     if (!safeStorage.isEncryptionAvailable()) {
-      throw new Error('OS encryption is unavailable; refusing to store secrets in plaintext.')
+      throw new Error('El cifrado del sistema no está disponible; no se guardarán secretos en texto plano.')
     }
     mkdirSync(this.dir, { recursive: true })
     writeFileSync(this.file(name), safeStorage.encryptString(value), { mode: 0o600 })

@@ -15,28 +15,28 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
     setMessage(null)
     const result = await fn()
     setBusy(null)
-    if (!result.ok) setMessage(result.error ?? 'Something went wrong.')
+    if (!result.ok) setMessage(result.error ?? 'Algo salió mal.')
   }
 
   return (
-    <section className="setup" aria-label="Setup">
-      <p className="setup__intro">Narsil needs three things before it can watch your inbox and calendar.</p>
+    <section className="setup" aria-label="Ajustes">
+      <p className="setup__intro">Narsil necesita tres cosas para poder revisar tu correo y tu calendario.</p>
       <ol className="setup__steps">
         <li className={status.hasGoogleClient ? 'step step--done' : 'step'}>
-          <h3>Google client file</h3>
-          <p>The OAuth “Desktop app” JSON from your Google Cloud project. The README explains how to get it.</p>
+          <h3>Archivo de cliente de Google</h3>
+          <p>El JSON del cliente OAuth tipo “App de escritorio” de tu proyecto de Google Cloud. El README explica cómo obtenerlo.</p>
           <button
             type="button"
             className="btn btn--primary"
             disabled={busy !== null}
             onClick={() => void run('client', () => window.narsil.importGoogleClient())}
           >
-            {status.hasGoogleClient ? 'Replace client file' : 'Choose client file'}
+            {status.hasGoogleClient ? 'Reemplazar archivo de cliente' : 'Elegir archivo de cliente'}
           </button>
         </li>
         <li className={status.googleConnected ? 'step step--done' : 'step'}>
-          <h3>Google account</h3>
-          <p>Opens your browser so you can allow Narsil to read Gmail, act on messages and read your calendar.</p>
+          <h3>Cuenta de Google</h3>
+          <p>Abre tu navegador para que autorices a Narsil a leer Gmail, actuar sobre tus correos y leer tu calendario.</p>
           {status.googleConnected ? (
             <button
               type="button"
@@ -44,7 +44,7 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
               disabled={busy !== null}
               onClick={() => void run('disconnect', () => window.narsil.disconnectGoogle())}
             >
-              Disconnect Google
+              Desconectar Google
             </button>
           ) : (
             <button
@@ -53,13 +53,13 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
               disabled={busy !== null || !status.hasGoogleClient}
               onClick={() => void run('connect', () => window.narsil.connectGoogle())}
             >
-              {busy === 'connect' ? 'Waiting for your browser…' : 'Connect Google'}
+              {busy === 'connect' ? 'Esperando a tu navegador…' : 'Conectar Google'}
             </button>
           )}
         </li>
         <li className={status.hasAnthropicKey ? 'step step--done' : 'step'}>
-          <h3>Anthropic API key</h3>
-          <p>Used to summarize each email and draft replies. Stored encrypted on this computer.</p>
+          <h3>API key de Anthropic</h3>
+          <p>Se usa para resumir cada correo y redactar respuestas. Se guarda cifrada en este equipo.</p>
           <form
             className="setup__key"
             onSubmit={(e) => {
@@ -71,12 +71,12 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
               type="password"
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              placeholder={status.hasAnthropicKey ? 'Key saved. Paste a new one to replace it' : 'sk-ant-…'}
-              aria-label="Anthropic API key"
+              placeholder={status.hasAnthropicKey ? 'Clave guardada. Pega una nueva para reemplazarla' : 'sk-ant-…'}
+              aria-label="API key de Anthropic"
               autoComplete="off"
             />
             <button type="submit" className="btn btn--primary" disabled={busy !== null || !key.trim()}>
-              Save key
+              Guardar clave
             </button>
           </form>
         </li>

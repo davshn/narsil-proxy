@@ -68,7 +68,7 @@ export function htmlToText(html: string): string {
 
 export function parseMessage(message: GmailMessageLike): ParsedEmail {
   const payload = message.payload
-  const from = header(payload, 'From') ?? '(Unknown sender)'
+  const from = header(payload, 'From') ?? '(Remitente desconocido)'
   const internal = Number(message.internalDate)
 
   const plain = findPart(payload, 'text/plain')
@@ -83,7 +83,7 @@ export function parseMessage(message: GmailMessageLike): ParsedEmail {
       id: message.id ?? '',
       threadId: message.threadId ?? '',
       from,
-      subject: header(payload, 'Subject')?.trim() || '(No subject)',
+      subject: header(payload, 'Subject')?.trim() || '(Sin asunto)',
       snippet: message.snippet ?? '',
       receivedAt: new Date(Number.isFinite(internal) && internal > 0 ? internal : Date.now()).toISOString(),
       replyTo
