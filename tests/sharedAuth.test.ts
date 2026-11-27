@@ -55,6 +55,7 @@ function fakeClient(storage: SessionStorage, overrides: Partial<AuthClient> = {}
       await storage.removeItem('sb-auth')
       return { error: null }
     }),
+    stopAutoRefresh: vi.fn(async () => undefined),
     ...overrides
   }
   return client
@@ -114,6 +115,21 @@ describe('validSharedConfig', () => {
   it('rejects a key that is neither publishable nor anon', () => {
     expect(() => validSharedConfig(CONFIG.url, 'hola')).toThrow('La clave pública no es válida.')
   })
+
+  // A legacy key is a JWT: its role is inside the base64url payload, never in the raw text.
+  const jwt = (payload: object): string =>
+    [{ alg: 'HS256', typ: 'JWT' }, payload].map((part) => Buffer.from(JSON.stringify(part)).toString('base64url')).join('.') + '.c2ln'
+
+  it('refuses a legacy service_role JWT, which bypasses every database rule', () => {
+    expect(() => validSharedConfig(CONFIG.url, jwt({ iss: 'supabase', role: 'service_role' }))).toThrow(
+      'Esa es una clave secreta. Pega la clave pública (publishable o anon), nunca la secreta.'
+    )
+  })
+
+  it('refuses a JWT whose payload is not an anon role or cannot be read', () => {
+    expect(() => validSharedConfig(CONFIG.url, jwt({ iss: 'supabase', role: 'authenticated' }))).toThrow('La clave pública no es válida.')
+    expect(() => validSharedConfig(CONFIG.url, 'eyJhbGciOiJIUzI1NiJ9.bm8tanNvbg.c2ln')).toThrow('La clave pública no es válida.')
+  })
 })
 
 describe('SharedAuth', () => {
@@ -152,6 +168,34 @@ describe('SharedAuth', () => {
     await expect(auth.signIn()).rejects.toThrow('El inicio de sesión tardó demasiado. Vuelve a intentarlo.')
   })
 
+  it('passes the flow id Supabase put in the redirect, so the right verifier is used', async () => {
+    const { auth, client } = setup('?code=good-code&sb_flow_id=flow-7')
+    await auth.signIn()
+    expect(client()?.exchangeCodeForSession).toHaveBeenCalledWith('good-code', { flowId: 'flow-7' })
+  })
+
+  it('leaves no timer behind when the browser cannot open', async () => {
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      const auth = new SharedAuth({
+        configs: new MemoryConfigs(CONFIG),
+        secrets: new MemorySecrets(),
+        port: 0,
+        timeoutMs: 20,
+        makeClient: (_config, storage) => fakeClient(storage),
+        openBrowser: () => {
+          throw new Error('no browser')
+        }
+      })
+      await expect(auth.signIn()).rejects.toThrow('no browser')
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally {
+      process.off('unhandledRejection', unhandled)
+    }
+  })
+
   it('keeps the session across restarts, then signs out and forgets it', async () => {
     const { auth, secrets, configs } = setup('?code=good-code')
     await auth.signIn()
@@ -166,11 +210,13 @@ describe('SharedAuth', () => {
     expect(secrets.get('shared-session')).toBeNull()
   })
 
-  it('saving another project forgets the old session', async () => {
-    const { auth, secrets } = setup('?code=good-code')
+  it('saving another project forgets the old session and stops the old client refreshing it', async () => {
+    const { auth, secrets, client } = setup('?code=good-code')
     await auth.signIn()
+    const old = client()
     const status = await auth.setConfig('https://zyxwvutsrqponmlk.supabase.co', 'sb_publishable_other')
     expect(status).toEqual({ configured: true, projectUrl: 'https://zyxwvutsrqponmlk.supabase.co' })
+    expect(old?.stopAutoRefresh).toHaveBeenCalled()
     expect(secrets.get('shared-session')).toBeNull()
   })
 })

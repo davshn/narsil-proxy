@@ -55,3 +55,15 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - The project URL and key are not committed: the repository is public.
 - L9 Evidence: 13 new tests failed first (RED), then passed. 400 tests pass; typecheck, eslint and build are clean. Real sign-in by the owner, user: "Funcionó".
 - L10 Risk: item 2 (sign-in, a session token stored on disk) and item 5 (new dependency `@supabase/supabase-js` 2.119.2).
+- L11 Independent verifier: S2 PASS, no blockers. It reported, with reproductions:
+  1. A legacy `service_role` JWT passed `validSharedConfig`, because the role sits in the base64url payload.
+  2. When `openBrowser` threw, the timeout timer leaked into an unhandled rejection.
+
+  It also suggested two hardening items: pass the `sb_flow_id` to `exchangeCodeForSession`, and stop the old client's auto-refresh when the project changes.
+- L12 All four are fixed:
+  - The JWT payload role must be `anon`, and `service_role` is refused as a secret key.
+  - `callback()` returns a cancel function, which `finally` calls.
+  - The flow id is passed when present.
+  - `setConfig` calls `stopAutoRefresh()` on the old client.
+
+  Regression tests failed first, then passed.

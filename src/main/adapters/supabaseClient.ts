@@ -11,8 +11,9 @@ export function makeSupabaseAuth(config: SharedConfig, storage: SessionStorage):
   })
   return {
     signInWithOAuth: (credentials) => client.auth.signInWithOAuth(credentials),
-    exchangeCodeForSession: (code) => client.auth.exchangeCodeForSession(code),
+    exchangeCodeForSession: (code, options) => client.auth.exchangeCodeForSession(code, options),
     getSession: () => client.auth.getSession(),
-    signOut: (options) => client.auth.signOut(options)
+    signOut: (options) => client.auth.signOut(options),
+    stopAutoRefresh: () => client.auth.stopAutoRefresh()
   }
 }

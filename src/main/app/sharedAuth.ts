@@ -42,9 +42,14 @@ export interface AuthClient {
     provider: 'google'
     options: { redirectTo: string; skipBrowserRedirect: true }
   }): Promise<{ data: { url: string | null }; error: { message: string } | null }>
-  exchangeCodeForSession(code: string): Promise<{ data: { session: Session | null }; error: { message: string } | null }>
+  exchangeCodeForSession(
+    code: string,
+    options?: { flowId: string }
+  ): Promise<{ data: { session: Session | null }; error: { message: string } | null }>
   getSession(): Promise<{ data: { session: Session | null } }>
   signOut(options: { scope: 'local' }): Promise<{ error: { message: string } | null }>
+  /** Stops the background token refresh of a client Narsil no longer uses. */
+  stopAutoRefresh(): Promise<void>
 }
 
 export interface SharedAuthDeps {
@@ -70,11 +75,26 @@ export function validSharedConfig(rawUrl: string, rawKey: string): SharedConfig 
   }
   if (url.protocol !== 'https:') throw new Error('La URL del proyecto debe empezar por https://.')
   const key = rawKey.trim()
-  if (/^sb_secret_/.test(key) || /service_role/.test(key)) {
-    throw new Error('Esa es una clave secreta. Pega la clave pública (publishable o anon), nunca la secreta.')
-  }
-  if (!PUBLISHABLE.test(key) && !LEGACY_ANON.test(key)) throw new Error('La clave pública no es válida.')
+  if (/^sb_secret_/.test(key)) throw new Error(SECRET_KEY)
+  if (PUBLISHABLE.test(key)) return { url: url.origin, publishableKey: key }
+  if (!LEGACY_ANON.test(key)) throw new Error('La clave pública no es válida.')
+  // A legacy key is a JWT: its role is in the payload, which is base64url and never shows the word.
+  const role = legacyRole(key)
+  if (role === 'service_role') throw new Error(SECRET_KEY)
+  if (role !== 'anon') throw new Error('La clave pública no es válida.')
   return { url: url.origin, publishableKey: key }
+}
+
+const SECRET_KEY = 'Esa es una clave secreta. Pega la clave pública (publishable o anon), nunca la secreta.'
+
+/** The `role` claim of a JWT, or null when its payload cannot be read. The signature is Supabase's to check. */
+function legacyRole(jwt: string): string | null {
+  try {
+    const payload = JSON.parse(Buffer.from(jwt.split('.')[1] ?? '', 'base64url').toString('utf8')) as { role?: unknown }
+    return typeof payload.role === 'string' ? payload.role : null
+  } catch {
+    return null
+  }
 }
 
 /** Keeps the client's keys in one encrypted secret, so the session survives restarts. */
@@ -124,6 +144,8 @@ export class SharedAuth {
   async setConfig(url: string, publishableKey: string): Promise<SharedStatus> {
     const config = validSharedConfig(url, publishableKey)
     this.deps.configs.save(config)
+    // A refresh still running on the old client must not write its session back.
+    await this.client?.stopAutoRefresh()
     this.client = null
     this.deps.secrets.delete('shared-session')
     return this.status()
@@ -134,20 +156,24 @@ export class SharedAuth {
     if (!config) throw new Error('Guarda primero la URL y la clave pública del proyecto.')
     const auth = this.auth(config)
     const { server, port } = await this.listen()
+    let cancel = (): void => undefined
     try {
       const redirectTo = `http://127.0.0.1:${port}${SHARED_REDIRECT_PATH}`
       const { data, error } = await auth.signInWithOAuth({ provider: 'google', options: { redirectTo, skipBrowserRedirect: true } })
       if (error || !data.url) throw new Error(`Supabase no inició el inicio de sesión: ${error?.message ?? 'sin URL'}`)
       const callback = this.callback(server)
+      cancel = callback.cancel
       await this.deps.openBrowser(data.url)
-      const { params, res } = await callback
+      const { params, res } = await callback.result
       const denied = params.get('error_description') ?? params.get('error')
       const code = params.get('code')
       if (denied || !code) {
         respond(res, 'No se pudo iniciar sesión', 'Vuelve a Narsil para ver qué pasó.')
         throw new Error(`Google no completó el inicio de sesión: ${denied ?? 'no llegó el código'}`)
       }
-      const exchange = await auth.exchangeCodeForSession(code)
+      // Supabase keeps one verifier per flow; the flow id it added to the redirect picks the right one.
+      const flowId = params.get('sb_flow_id')
+      const exchange = flowId ? await auth.exchangeCodeForSession(code, { flowId }) : await auth.exchangeCodeForSession(code)
       if (exchange.error || !exchange.data.session) {
         respond(res, 'No se pudo iniciar sesión', 'Vuelve a Narsil para ver qué pasó.')
         throw new Error(`Supabase no aceptó el inicio de sesión: ${exchange.error?.message ?? 'sin sesión'}`)
@@ -155,6 +181,7 @@ export class SharedAuth {
       respond(res, 'Listo', 'Ya puedes volver a Narsil y cerrar esta pestaña.')
       return await this.status()
     } finally {
+      cancel()
       server.close()
     }
   }
@@ -187,10 +214,14 @@ export class SharedAuth {
     return { server, port: (server.address() as AddressInfo).port }
   }
 
-  /** The first request to the callback path, or a timeout; anything else gets a 404. */
-  private callback(server: Server): Promise<{ params: URLSearchParams; res: ServerResponse }> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(
+  /**
+   * The first request to the callback path, or a timeout; anything else gets a 404. `cancel`
+   * stops the timer, so a sign-in that failed earlier leaves nothing pending.
+   */
+  private callback(server: Server): { result: Promise<{ params: URLSearchParams; res: ServerResponse }>; cancel(): void } {
+    let timer: NodeJS.Timeout | undefined
+    const result = new Promise<{ params: URLSearchParams; res: ServerResponse }>((resolve, reject) => {
+      timer = setTimeout(
         () => reject(new Error('El inicio de sesión tardó demasiado. Vuelve a intentarlo.')),
         this.deps.timeoutMs ?? SIGN_IN_TIMEOUT_MS
       )
@@ -204,6 +235,7 @@ export class SharedAuth {
         resolve({ params: url.searchParams, res })
       })
     })
+    return { result, cancel: () => clearTimeout(timer) }
   }
 }
 
