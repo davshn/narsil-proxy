@@ -216,13 +216,16 @@ Shared lists let Narsil users give each other tasks. They live in a [Supabase](h
 
 Every permission is a row level security policy in `supabase/migrations/`, so it holds whatever app or tool calls the database:
 
-- Membership is by **confirmed** email. An invitation opens a list as soon as that person signs in with that email.
-- Only members see a list, its members, its tasks and each other's names.
-- Any member creates tasks and assigns them, to members only.
-- The assignee and the creator change a task: its status, name, description and assignee.
-- A list has exactly one owner. Only the owner invites, removes members, renames or deletes the list, and the owner cannot leave it.
-- Removing a member deletes the tasks assigned to them. Tasks they created for others stay.
-- The creator or the list owner deletes a task.
+- **Invitations are by confirmed email and must be accepted.**
+  - An invited person sees only the list name and who owns it, then accepts or declines.
+  - Until they accept, they see no task or member, and nobody in the list sees their name.
+- **Seeing:** only members who accepted see a list's members, its tasks and each other's names.
+- **Tasks:** any member creates tasks and assigns them, only to members who accepted.
+  - The assignee and the creator change a task: its status, name, description and assignee.
+  - The creator or the list owner deletes a task.
+- **Owner:** a list has exactly one owner. Only the owner invites, removes members, renames or deletes the list, and the owner cannot leave it.
+- **Leaving:** any other member can leave. Removing or leaving deletes the tasks assigned to that person; tasks they created for others stay.
+- **Server-side history:** who changed a task last, and when, always comes from the session and the server clock.
 
 The policies are tested in `supabase/tests/` against a local Supabase in Docker:
 

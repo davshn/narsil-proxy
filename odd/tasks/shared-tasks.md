@@ -7,7 +7,8 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
 
 - S1: Shared lists live in Supabase (free plan), apart from personal Pendientes, which stay in `tasks.json`. "yo ponerle tareas compartidas a alguien y que su aplicación las traiga. Y lo mismo yo ver las que la otra persona me pone y ver las actualizaciones."
 - S2: Each user signs in to shared lists with Google from Ajustes. Supabase knows the user from a signed session that Narsil stores encrypted. The flow is OAuth PKCE with a fixed loopback redirect, `http://127.0.0.1:47813/auth/callback`, run in the main process.
-- S3: Lists have members, invited by Google email. A task is assigned to a member, picked by real name. Invitations stay pending until the invited person signs in with that email.
+- S3: Lists have members, invited by Google email. A task is assigned to a member who accepted, picked by real name.
+  - Decision (2026-11-27, D4): "Aceptar la invitación". An invited person sees only the list name and its owner until they accept or decline. Nobody sees their name before they accept. Any member but the owner can leave.
 - S4: Database rules (row level security) decide every permission; the app only follows them:
   - Only members see a list and its tasks.
   - Any member creates and assigns tasks.
@@ -92,3 +93,11 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - Truncate, trigger and references are revoked.
 
   Eight regression tests failed first; 50 pass now and the advisors report 0 findings. The README says to keep Confirm email and Secure email change on. D4 waits on the owner.
+- L18 D4: the user chose "Aceptar la invitación (Recommended)".
+  - Schema: `list_members.accepted_at`, the helpers `is_invited` and `is_accepted`, and a `normalize_member` trigger. On insert it marks only the owner's row accepted; on update it stamps `now()`.
+  - Column grants: insert only `(list_id, email)`, update only `(accepted_at)`.
+  - Policies: an accept policy, and delete for "the owner removes, and anyone leaves". Tasks are assigned only to accepted members.
+  - Profiles: an invited person sees the owner, never the other way round before accepting.
+- L19 Evidence: the rewritten pgTAP suite has 74 tests. RED: `accepted_at` did not exist; then a full pass.
+  - Mutation: `is_member` ignoring acceptance made tests 17-19, 24 and 64 fail; a reset restored the pass.
+  - Advisors: 0 findings.
