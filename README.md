@@ -18,7 +18,7 @@ Nothing is sent, archived or deleted without your click. With more than one acco
 
 ## Requirements
 
-- Windows 10 or 11
+- Windows 10 or 11, or macOS 12 or later (see [On a Mac](#on-a-mac); not yet tested on real hardware)
 - Node.js 20 or later
 - At least one Google account (Gmail and Google Calendar) or Microsoft account (Outlook.com, Hotmail or Microsoft 365)
 - An Anthropic API key from <https://console.anthropic.com/>
@@ -93,6 +93,36 @@ Narsil sits above the taskbar as a little sea serpent, drawn with the art from n
 If you used an earlier version with one Google account, Narsil moves it to the new account list on first start, so you do not need to sign in again.
 
 Secrets are encrypted with Windows DPAPI (Electron `safeStorage`) under `%APPDATA%\narsil-proxy\secrets`.
+
+### On a Mac
+
+The same code runs on macOS. Run it from the repository the same way:
+
+```sh
+npm ci
+node node_modules/electron/install.js
+npm run build
+npm start
+```
+
+To get an installable app, build it on the Mac itself:
+
+```sh
+npm run dist:mac
+```
+
+This writes `dist/Narsil-<version>.dmg`. Open it and drag Narsil to Applications.
+
+The build is not signed or notarized with an Apple Developer ID. A copy you build on your own Mac opens normally. A copy downloaded from elsewhere gets blocked by macOS: right-click it and choose **Abrir** (Open), or run `xattr -cr /Applications/Narsil.app`.
+
+What changes on a Mac:
+
+- **Where Narsil lives:** in the menu bar, not the Dock. Clicking the app again in Finder or Spotlight brings her back.
+- **Tray menu:** the checkbox reads **Abrir al iniciar sesión** (open at login).
+- **Secrets:** encrypted with the macOS Keychain (Electron `safeStorage`) under `~/Library/Application Support/narsil-proxy/secrets`. The first time, macOS may ask to let Narsil use its Keychain entry; choose **Permitir siempre** (always allow).
+- **MCP bridge:** Narsil listens on a Unix socket instead of a named pipe (see [How the bridge finds Narsil](#use-narsil-from-claude-mcp)).
+- **Icon:** the app icon is the 256 px icon scaled up to 512 px (`resources/icon-512.png`). Replace it with a native 1024 px icon for a sharper Dock and Finder icon.
+- **Not tried on a Mac yet:** signing in with Google or Microsoft, notifications, and the menu bar icon.
 
 ## Using it
 
@@ -237,6 +267,7 @@ Narsil does not ask again before a mail action. The only confirmation is Claude'
      }
      ```
 
+   - **Claude Desktop on a Mac:** edit `~/Library/Application Support/Claude/claude_desktop_config.json` the same way, with `"args": ["<repo>/out/main/mcp.js"]`. If Claude cannot find `node`, use its full path from `which node` as `command`.
    - **Claude Code:**
 
      ```powershell
@@ -245,7 +276,13 @@ Narsil does not ask again before a mail action. The only confirmation is Claude'
 
 **How the bridge finds Narsil**
 
-On every start, Narsil opens a named pipe with a random name. It then writes the pipe name and a random token to `%LOCALAPPDATA%\Narsil\mcp.json`, a folder only your Windows user can read. The bridge sends that token with every call, and Narsil refuses any call without it. When Narsil quits, it deletes the file.
+On every start, Narsil opens a local endpoint with a random name:
+
+- **Windows:** a named pipe, with its details in `%LOCALAPPDATA%\Narsil\mcp.json`.
+- **Mac:** a Unix socket in `~/Library/Application Support/Narsil/`, with its details in `mcp.json` in that same folder.
+- **Linux:** under `~/.local/state/narsil/`.
+
+That file holds the endpoint and a random token, and lives in a folder only your user can read. On a Mac the socket and the file are also limited to your user. The bridge sends the token with every call, and Narsil refuses any call without it. When Narsil quits, it deletes the file.
 
 ## Claude usage and privacy
 

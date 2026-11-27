@@ -96,8 +96,11 @@ function resourcePath(name: string): string {
 }
 
 /** narsilPet's app icon, scaled for the notification area. */
+/** The macOS menu bar is about 22 points tall, so its icon is smaller than a Windows tray icon. */
+const TRAY_SIZE = process.platform === 'darwin' ? 18 : 32
+
 function trayIcon(): Electron.NativeImage {
-  return nativeImage.createFromPath(resourcePath('icon.png')).resize({ width: 32, height: 32, quality: 'best' })
+  return nativeImage.createFromPath(resourcePath('icon.png')).resize({ width: TRAY_SIZE, height: TRAY_SIZE, quality: 'best' })
 }
 
 const faces = new Map<string, Electron.NativeImage>()
@@ -130,7 +133,7 @@ function createTray(): void {
         { label: 'Revisar ahora', click: () => void service?.refresh() },
         { type: 'separator' },
         {
-          label: 'Iniciar con Windows',
+          label: process.platform === 'darwin' ? 'Abrir al iniciar sesión' : 'Iniciar con Windows',
           type: 'checkbox',
           checked: openAtLogin,
           click: () => {
@@ -384,9 +387,13 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => win?.showInactive())
+  // macOS: clicking the app again (Finder, Spotlight, Launchpad) brings Narsil back.
+  app.on('activate', () => win?.showInactive())
 
   void app.whenReady().then(() => {
-    app.setAppUserModelId('com.narsil.desktop')
+    // Windows names toasts after this id; on macOS Narsil lives in the menu bar, not the Dock.
+    if (process.platform === 'win32') app.setAppUserModelId('com.narsil.desktop')
+    if (process.platform === 'darwin') app.dock?.hide()
     createWindow()
     createTray()
 

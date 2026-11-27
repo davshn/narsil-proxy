@@ -10,7 +10,8 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
-    "dist": "electron-vite build && electron-builder --win"
+    "dist": "electron-vite build && electron-builder --win",
+    "dist:mac": "electron-vite build && electron-builder --mac"
   },
   "build": {
     "appId": "com.narsil.desktop",
@@ -35,6 +36,12 @@
     "nsis": {
       "createStartMenuShortcut": true,
       "shortcutName": "Narsil"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "resources/icon-512.png",
+      "category": "public.app-category.productivity",
+      "darkModeSupport": true
     }
   },
   "dependencies": {

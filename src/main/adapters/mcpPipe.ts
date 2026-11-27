@@ -1,8 +1,8 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server, type Socket } from 'node:net'
 import { dirname } from 'node:path'
-import { MCP_MAX_LINE, McpRequestSchema, type McpDiscovery, type McpResponse } from '../../mcp/protocol'
+import { MCP_MAX_LINE, McpRequestSchema, mcpEndpoint, type McpDiscovery, type McpResponse } from '../../mcp/protocol'
 import type { McpHandler } from '../app/mcpTools'
 
 /** Requests one connection may have waiting for an answer before it is dropped. */
@@ -11,33 +11,45 @@ const MAX_PENDING = 64
 export interface McpPipeOptions {
   /** Where to write how to reach this server (see mcpDiscoveryFile). */
   file: string
+  /** Defaults to this machine's; tests pass another to check the per-platform setup. */
+  platform?: NodeJS.Platform
 }
 
 /**
- * Serves the MCP bridge over a Windows named pipe with a random name. Each line is one JSON
- * request carrying the token from the discovery file; a request without it never runs.
+ * Serves the MCP bridge over a local endpoint with a random name: a named pipe on Windows, a
+ * Unix socket elsewhere. Each line is one JSON request carrying the token from the discovery
+ * file; a request without it never runs.
  */
 export class McpPipeServer {
   private server: Server | undefined
-  private readonly discovery: McpDiscovery = {
-    pipe: `\\\\.\\pipe\\narsil-mcp-${randomBytes(16).toString('hex')}`,
-    token: randomBytes(32).toString('hex'),
-    pid: process.pid
-  }
+  private readonly platform: NodeJS.Platform
+  private readonly discovery: McpDiscovery
 
   constructor(
     private readonly handlers: Partial<Record<string, McpHandler>>,
     private readonly options: McpPipeOptions
-  ) {}
+  ) {
+    this.platform = options.platform ?? process.platform
+    this.discovery = {
+      pipe: mcpEndpoint(this.platform, dirname(options.file), randomBytes(16).toString('hex')),
+      token: randomBytes(32).toString('hex'),
+      pid: process.pid
+    }
+  }
 
   async start(): Promise<void> {
+    // Only this user may enter the folder that holds the token and, off Windows, the socket.
+    mkdirSync(dirname(this.options.file), { recursive: true, mode: 0o700 })
+    const unixSocket = this.platform !== 'win32'
+    // A socket file left by a crash would make listen fail with EADDRINUSE.
+    if (unixSocket) rmSync(this.discovery.pipe, { force: true })
     const server = createServer((socket) => this.serve(socket))
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject)
       server.listen(this.discovery.pipe, () => resolve())
     })
+    if (unixSocket) chmodSync(this.discovery.pipe, 0o600)
     this.server = server
-    mkdirSync(dirname(this.options.file), { recursive: true })
     writeFileSync(this.options.file, JSON.stringify(this.discovery), { mode: 0o600 })
   }
 
