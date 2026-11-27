@@ -249,6 +249,7 @@ function notifyAssignments(items: SharedAssignment[]): void {
     win.show()
     win.focus()
     placeWindow(EXPANDED)
+    send(IPC.focusShared, null)
   })
   notification.on('close', release)
   notification.show()

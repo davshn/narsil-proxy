@@ -54,6 +54,7 @@ const api: NarsilApi = {
   onMeetingsChanged: (listener) => subscribe(IPC.meetingsChanged, listener),
   onReminder: (listener) => subscribe(IPC.reminder, listener),
   onStatusChanged: (listener) => subscribe(IPC.statusChanged, listener),
+  onFocusShared: (listener) => subscribe(IPC.focusShared, () => listener()),
   onFocusEmail: (listener) => subscribe<string | null | undefined>(IPC.focusEmail, (key) => listener(key ?? null))
 }
 

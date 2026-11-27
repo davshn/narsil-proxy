@@ -442,6 +442,8 @@ export interface NarsilApi {
   onStatusChanged(listener: (status: AppStatus) => void): () => void
   /** A new-mail notification was clicked: show that email, or just the mail list (null) for a group. */
   onFocusEmail(listener: (key: string | null) => void): () => void
+  /** A shared-task notification was clicked: show the shared lists. */
+  onFocusShared(listener: () => void): () => void
 }
 
 export const IPC = {
@@ -491,5 +493,6 @@ export const IPC = {
   meetingsChanged: 'narsil:meetings-changed',
   reminder: 'narsil:reminder',
   statusChanged: 'narsil:status-changed',
-  focusEmail: 'narsil:focus-email'
+  focusEmail: 'narsil:focus-email',
+  focusShared: 'narsil:focus-shared'
 } as const

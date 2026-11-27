@@ -34,7 +34,7 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
 - [x] F1 [S2] Sign-in spike in Narsil: PKCE, loopback on port 47813, encrypted session with refresh, Ajustes shows the signed-in email. Route: inline.
 - [x] F2 [S3, S4] Schema, migrations and row level security with policy tests on a local Supabase. Route: inline. Risk: item 2 (security), so it gets an independent verifier and review. Commits: 6f359b0, 334e78c, 6910727, 3b09979 (PR #8, merged; applied to the real project on 2026-11-27).
 - [x] F3 [S5] Sync adapter: polling every 10 seconds, local cache, notification on assignment. Route: inline. Branch: `feat/shared-sync`. Risk: none. Evidence: L24-L25.
-- [ ] F4 [S6] Interface. Route: inline.
+- [x] F4 [S6] Interface. Route: inline. Branch: `feat/shared-ui`. Risk: none. Evidence: L26.
 - [ ] F5 [S7] MCP tools. Route: inline.
 - [ ] F6 [S8] Docs and a two-account end-to-end test. Route: inline.
 
@@ -122,3 +122,8 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - It reports a task as newly assigned only against a previous copy of the same user, and only when someone else assigned it.
   - `SharedAuth.session()` throws when the session exists but cannot be read, so an offline refresh never looks like a sign-out.
 - L25 (2026-11-27) Live check against the real project: after a restart Narsil wrote `shared-cache.json` with 0 profiles, although the user's own profile should be visible. Cause: the owner signed in at F1, before the schema, so the profile trigger never ran. Fix: migration `20261127150402_backfill_profiles.sql`. Checked on the local database: a confirmed pre-schema account gets its profile with a lowercased email, an unconfirmed one gets none, and a second run adds nothing. After `db reset`, 79 policy tests pass and the advisors report 0 findings. No pgTAP test: the statement lives in a migration and runs once.
+- L26 (2026-11-27) F4 built test first.
+  - Writes: `SharedLists` and one `sharedAction` IPC channel validated by zod. RED: the auth test failed on `session.write` and the suite could not import the module. GREEN: 14 tests. Each change is checked first, written with the user's session, explained in Spanish when refused (42501, 23505, 23503, trigger messages, zero rows touched), then synced.
+  - Screens: **Mías / Compartidas** switch, invitations, lists, members, tasks with assignee, status and last change. The view logic (`sharedView.ts`) has 9 tests; RED was a missing module.
+  - The tab count adds unfinished shared tasks assigned to the user. A clicked assignment notification opens Compartidas.
+  - Full suite 447/447, typecheck and build pass. After a restart Narsil kept syncing. Not checked on screen: the desktop approval was not available over Remote Control, so the owner checks the screens.
