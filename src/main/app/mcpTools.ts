@@ -1,8 +1,8 @@
-import { z } from 'zod'
-import { MCP_TOOLS, type McpToolName } from '../../mcp/protocol'
+import { parseToolArgs as parse, type McpToolName } from '../../mcp/protocol'
 import type { PendingTask } from '@shared/types'
 import type { NarsilService } from './narsilService'
 import type { TaskList } from './tasks'
+import { createSharedMcpHandlers, type SharedMcpDeps } from './mcpSharedTools'
 
 /** What the bridge may use of the service: never accounts, credentials or settings. */
 export type McpServiceView = Pick<
@@ -26,17 +26,14 @@ export interface McpToolDeps {
   tasks: TaskList
   /** A tool changed the tasks; the open window must show them. */
   tasksChanged(tasks: PendingTask[]): void
+  /** The shared lists, changed with the signed-in user's session. */
+  shared: SharedMcpDeps
 }
 
 /** Runs one tool with the arguments Claude sent; throws with a message Claude can read. */
 export type McpHandler = (args: Record<string, unknown>) => Promise<unknown>
 
-/** The tool's own schema, checked again here: the pipe accepts any JSON. */
-function parse<N extends McpToolName>(name: N, args: Record<string, unknown>): z.infer<z.ZodObject<(typeof MCP_TOOLS)[N]['input']>> {
-  return z.strictObject(MCP_TOOLS[name].input).parse(args) as z.infer<z.ZodObject<(typeof MCP_TOOLS)[N]['input']>>
-}
-
-export function createMcpHandlers({ service, tasks, tasksChanged }: McpToolDeps): Record<McpToolName, McpHandler> {
+export function createMcpHandlers({ service, tasks, tasksChanged, shared }: McpToolDeps): Record<McpToolName, McpHandler> {
   const emailOf = (accountId: string): string | undefined => service.status().accounts.find((a) => a.id === accountId)?.email
 
   /** Stores a change, tells the window, and answers with the task it touched. */
@@ -46,6 +43,7 @@ export function createMcpHandlers({ service, tasks, tasksChanged }: McpToolDeps)
   }
 
   return {
+    ...createSharedMcpHandlers(shared),
     get_status: async (args) => {
       parse('get_status', args)
       const status = service.status()

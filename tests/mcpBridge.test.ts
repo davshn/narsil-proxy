@@ -54,7 +54,7 @@ async function connectClient(withNarsil: boolean): Promise<{ client: Client; rep
       saveRule: async () => undefined,
       saveServerRule: async () => undefined
     }
-    pipe = new McpPipeServer(createMcpHandlers({ service, tasks, tasksChanged: () => undefined }), { file })
+    pipe = new McpPipeServer(createMcpHandlers({ service, tasks, tasksChanged: () => undefined, shared: { apply: async () => ({ ok: true, state: { signedIn: false, snapshot: null } }), refresh: async () => ({ signedIn: false, snapshot: null }), state: () => ({ signedIn: false, snapshot: null }) } }), { file })
     await pipe.start()
   }
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()

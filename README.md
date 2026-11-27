@@ -198,7 +198,7 @@ Tasks are stored on this computer only, as plain JSON in `%APPDATA%\narsil-proxy
 
 ### Shared lists (in progress)
 
-Shared lists let Narsil users give each other tasks. They live in a [Supabase](https://supabase.com) project, apart from your personal Pendientes, which stay on this computer. They show in **Pendientes → Compartidas**. Claude access through MCP comes next.
+Shared lists let Narsil users give each other tasks. They live in a [Supabase](https://supabase.com) project, apart from your personal Pendientes, which stay on this computer. They show in **Pendientes → Compartidas**, and Claude can use them through [MCP](#use-narsil-from-claude-mcp).
 
 **One-time setup (the project owner)**
 
@@ -316,8 +316,21 @@ What Claude can do:
 | `create_meeting` | Adds a meeting to an account's calendar, or a weekly series on chosen days until a date. |
 | `create_rule` | Creates a local Narsil rule. It also acts on the current list right away. Marked destructive. |
 | `create_server_rule` | Creates a Gmail filter or an Outlook inbox rule in one account. It also acts on the current list right away. Marked destructive. |
+| `get_shared_lists` | Syncs and lists the shared lists, their members and tasks, and the invitations waiting for an answer. |
+| `create_shared_list` | Creates a shared list you own. |
+| `rename_shared_list` | Renames a list you own. |
+| `delete_shared_list` | Deletes a list you own, with its tasks. Marked destructive. |
+| `invite_to_shared_list` | Invites a person by Google email. No email is sent. |
+| `answer_shared_invitation` | Accepts or declines an invitation. |
+| `remove_shared_member` | Removes a member and the tasks assigned to them. Marked destructive. |
+| `leave_shared_list` | Leaves a list you do not own. Marked destructive. |
+| `save_shared_task` | Adds or edits a shared task, assigned by email or by name. |
+| `set_shared_task_status` | Changes a shared task's status. |
+| `delete_shared_task` | Deletes a shared task. Marked destructive. |
 
 Claude cannot edit or delete rules, and cannot touch accounts, keys or settings. Whatever Claude does shows up in the open window right away.
+
+Shared-list tools run with your own signed-in session, so the database rules apply to Claude exactly as they apply to you. To assign a task by name, Narsil matches the members who accepted the list by email, full name or first name, ignoring case and accents. When a name fits more than one person, the tool fails and lists them, and Claude asks you which one.
 
 Narsil does not ask again before a mail action. The only confirmation is Claude's own permission prompt for tools marked destructive. Email text comes from outside senders, and a malicious email could try to talk Claude into sending or deleting mail. Do not choose "always allow" for any tool marked destructive.
 
