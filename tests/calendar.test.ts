@@ -57,6 +57,18 @@ describe('Google Calendar new meetings', () => {
     expect(body).not.toHaveProperty('location')
   })
 
+  it('adds a weekly RRULE when the meeting repeats', async () => {
+    await service().createEvent({ ...NEW, repeat: { days: ['TU', 'TH'], until: '2027-03-16' } })
+    const body = api.events.insert.mock.calls[0]?.[0].requestBody
+    expect(body?.recurrence).toEqual([expect.stringMatching(/^RRULE:FREQ=WEEKLY;BYDAY=TU,TH;UNTIL=2027031\dT\d{6}Z$/)])
+    expect(body?.start).toEqual({ dateTime: NEW.start, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
+  })
+
+  it('sends no recurrence for a single meeting', async () => {
+    await service().createEvent(NEW)
+    expect(api.events.insert.mock.calls[0]?.[0].requestBody).not.toHaveProperty('recurrence')
+  })
+
   it('needs a reconnect without a request when the stored grant only reads the calendar', async () => {
     const old = service(`https://www.googleapis.com/auth/gmail.modify ${READONLY_SCOPE}`)
 

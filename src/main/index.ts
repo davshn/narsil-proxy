@@ -7,6 +7,7 @@ import { themeAt } from '@shared/dayNight'
 import {
   IPC,
   TASK_STATUSES,
+  WEEKDAYS,
   type Account,
   type ActionResult,
   type EmailAction,
@@ -258,7 +259,8 @@ const NewMeetingSchema = z.object({
   title: z.string().max(MAX_MEETING_TITLE * 2),
   start: z.string().min(1).max(64),
   end: z.string().min(1).max(64),
-  location: z.string().max(MAX_MEETING_LOCATION * 2).optional()
+  location: z.string().max(MAX_MEETING_LOCATION * 2).optional(),
+  repeat: z.object({ days: z.array(z.enum(WEEKDAYS)).max(14), until: z.string().max(10) }).optional()
 })
 const ConvertTargetSchema = z
   .object({ accountId: AccountId, folderId: FolderId.optional(), folderName: z.string().max(500).optional() })

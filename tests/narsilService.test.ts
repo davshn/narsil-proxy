@@ -1501,6 +1501,30 @@ describe('NarsilService new meetings', () => {
     expect(google.box('g1').createdEvents).toEqual([])
   })
 
+  it('sends a weekly series starting on the first chosen day', async () => {
+    const { service, google } = await makeService()
+    // Wednesday 2026-12-02 at 19:00 local, repeating on Tuesdays: the first class is Tuesday 2026-12-08.
+    const start = new Date(2026, 11, 2, 19).toISOString()
+    const end = new Date(2026, 11, 2, 20).toISOString()
+    await service.createMeeting('g1', { title: 'Clase', start, end, repeat: { days: ['TU', 'TU'], until: '2027-03-16' } })
+    expect(google.box('g1').createdEvents).toEqual([
+      {
+        title: 'Clase',
+        start: new Date(2026, 11, 8, 19).toISOString(),
+        end: new Date(2026, 11, 8, 20).toISOString(),
+        repeat: { days: ['TU'], until: '2027-03-16' }
+      }
+    ])
+  })
+
+  it('rejects a series without days before calling the calendar', async () => {
+    const { service, google } = await makeService()
+    await expect(service.createMeeting('g1', { ...MEETING, repeat: { days: [], until: '2027-03-16' } })).rejects.toThrow(
+      'Elige al menos un día para repetir la reunión.'
+    )
+    expect(google.box('g1').createdEvents).toEqual([])
+  })
+
   it('rejects an account that is not connected', async () => {
     const { service } = await makeService()
     await expect(service.createMeeting('nope', MEETING)).rejects.toThrow('Esta cuenta ya no está conectada.')

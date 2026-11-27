@@ -141,6 +141,13 @@ The **Reuniones** (meetings) tab lists the timed meetings of the next 24 hours f
 - **Cuenta** (account): which account's main calendar gets the meeting; the first account is preselected.
 - **Fecha** (date), **Inicio** (start) and **Fin** (end): in your local time zone. Inicio starts at the next half hour and Fin 30 minutes later; moving Inicio keeps the length. Fin must be after Inicio.
 - **Ubicación** (location): optional.
+- **Repetir cada semana** (repeat every week): optional. It turns the meeting into a weekly series:
+  - **Los días** (the days) chooses one or more weekdays. It starts with the weekday of Fecha.
+  - **Hasta** (until) is the last date the series may fall on. It starts eight weeks after Fecha.
+  - If Fecha is not one of the chosen days, the first meeting is the next chosen day.
+  - The button reads **Agregar serie** (add series).
+
+  Google gets a weekly `RRULE` and Outlook a weekly pattern, both in your local time zone, so a 19:00 Tuesday class stays on Tuesdays at 19:00. Each meeting of the series gets its own reminders, like any other.
 
 **Agregar** (add) creates the meeting in that calendar, then Narsil reads the calendar again so it shows in the list and gets its reminders. Problems show under the form in Spanish. An account that still has the old read-only calendar permission shows **Reconectar** there instead.
 
@@ -274,7 +281,7 @@ npm run dist
 src/
   shared/types.ts          Types and IPC channel names shared by every process
   main/
-    domain/                Pure logic with unit tests: reminders, email parsing, reply MIME, triage prompt
+    domain/                Pure logic with unit tests: reminders, weekly series, email parsing, reply MIME, triage prompt
     adapters/              Google (OAuth loopback + PKCE, Gmail, Gmail filters, Calendar), Microsoft (Graph mail,
                            inbox rules, calendar), Claude, encrypted store
     app/ports.ts           The provider port every account type implements

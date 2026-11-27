@@ -1,3 +1,5 @@
+import type { Weekday } from '@shared/types'
+
 /** Date and time helpers for the "Agregar reunión" form. Times are local `HH:MM`, dates `YYYY-MM-DD`. */
 
 const DEFAULT_MINUTES = 30
@@ -40,6 +42,28 @@ export function shiftEnd(oldStart: string, oldEnd: string, newStart: string): st
   const duration = minutesOf(oldEnd) - minutesOf(oldStart)
   const keep = Number.isNaN(duration) || duration <= 0 ? DEFAULT_MINUTES : duration
   return timeOf(Math.min(begin + keep, LAST_MINUTE))
+}
+
+const CODES: Weekday[] = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
+
+/** A `YYYY-MM-DD` date at local midnight, or null. */
+function dayOf(date: string): Date | null {
+  const at = new Date(`${date}T00:00`)
+  return Number.isNaN(at.getTime()) ? null : at
+}
+
+/** The weekday of a `YYYY-MM-DD` date, in calendar codes; null when it is not a date. */
+export function weekdayOf(date: string): Weekday | null {
+  const day = dayOf(date)
+  return day ? (CODES[day.getDay()] ?? null) : null
+}
+
+/** `date` moved by `days`; an unreadable date stays as it is. */
+export function addDays(date: string, days: number): string {
+  const day = dayOf(date)
+  if (!day) return date
+  day.setDate(day.getDate() + days)
+  return localDate(day)
 }
 
 /** The local date and time as an ISO instant; unparseable input stays as typed so the app can reject it. */

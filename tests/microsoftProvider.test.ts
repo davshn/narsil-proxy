@@ -581,6 +581,26 @@ describe('Outlook new meetings through Microsoft Graph', () => {
     })
   })
 
+  it('posts a weekly series in the local time zone, so the days do not shift to UTC', async () => {
+    fetchMock.mockImplementation(async () =>
+      respond(201, { id: 'ev-3', subject: 'Clase', start: { dateTime: '2026-12-01T19:00:00' }, end: { dateTime: '2026-12-01T20:00:00' } })
+    )
+    const start = new Date(2026, 11, 1, 19).toISOString()
+    const end = new Date(2026, 11, 1, 20).toISOString()
+    await connect().calendar.createEvent({ title: 'Clase', start, end, repeat: { days: ['TU'], until: '2027-03-16' } })
+
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    expect(calls()[0]?.body).toEqual({
+      subject: 'Clase',
+      start: { dateTime: '2026-12-01T19:00:00', timeZone },
+      end: { dateTime: '2026-12-01T20:00:00', timeZone },
+      recurrence: {
+        pattern: { type: 'weekly', interval: 1, daysOfWeek: ['tuesday'], firstDayOfWeek: 'monday' },
+        range: { type: 'endDate', startDate: '2026-12-01', endDate: '2027-03-16', recurrenceTimeZone: timeZone }
+      }
+    })
+  })
+
   it('leaves the location out when there is none', async () => {
     fetchMock.mockImplementation(async () =>
       respond(201, { id: 'ev-2', subject: 'Café', start: { dateTime: '2026-11-26T15:00:00' }, end: { dateTime: '2026-11-26T15:30:00' } })
