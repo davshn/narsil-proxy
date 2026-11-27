@@ -13,5 +13,17 @@
     "composite": true,
     "paths": { "@shared/*": ["./src/shared/*"] }
   },
-  "include": ["electron.vite.config.ts", "vitest.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*", "src/mcp/**/*", "tests/**/*", "src/renderer/src/components/petArt.ts", "src/renderer/src/components/meetingTimes.ts", "src/renderer/src/components/taskGroups.ts", "src/renderer/src/components/sharedView.ts"]
+  "include": [
+    "electron.vite.config.ts",
+    "vitest.config.ts",
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*",
+    "src/mcp/**/*",
+    "tests/**/*",
+    "src/renderer/src/components/petArt.ts",
+    "src/renderer/src/components/meetingTimes.ts",
+    "src/renderer/src/components/taskGroups.ts",
+    "src/renderer/src/components/sharedView.ts"
+  ]
 }

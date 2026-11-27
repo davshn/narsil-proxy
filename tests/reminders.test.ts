@@ -86,15 +86,18 @@ describe('dueReminders', () => {
 describe('toMeeting', () => {
   it('maps a timed Google Calendar event to a meeting of the given account', () => {
     expect(
-      toMeeting({
-        id: 'a',
-        summary: 'Planning',
-        status: 'confirmed',
-        start: { dateTime: '2026-11-26T15:00:00Z' },
-        end: { dateTime: '2026-11-26T15:30:00Z' },
-        location: 'Room 1',
-        hangoutLink: 'https://meet.google.com/abc'
-      }, 'acc-1')
+      toMeeting(
+        {
+          id: 'a',
+          summary: 'Planning',
+          status: 'confirmed',
+          start: { dateTime: '2026-11-26T15:00:00Z' },
+          end: { dateTime: '2026-11-26T15:30:00Z' },
+          location: 'Room 1',
+          hangoutLink: 'https://meet.google.com/abc'
+        },
+        'acc-1'
+      )
     ).toEqual({
       id: 'acc-1:a',
       accountId: 'acc-1',
@@ -112,18 +115,24 @@ describe('toMeeting', () => {
 
   it('skips cancelled events', () => {
     expect(
-      toMeeting({ id: 'c', status: 'cancelled', start: { dateTime: '2026-11-26T15:00:00Z' }, end: { dateTime: '2026-11-26T16:00:00Z' } }, 'acc-1')
+      toMeeting(
+        { id: 'c', status: 'cancelled', start: { dateTime: '2026-11-26T15:00:00Z' }, end: { dateTime: '2026-11-26T16:00:00Z' } },
+        'acc-1'
+      )
     ).toBeNull()
   })
 
   it('skips events the user declined', () => {
     expect(
-      toMeeting({
-        id: 'd',
-        start: { dateTime: '2026-11-26T15:00:00Z' },
-        end: { dateTime: '2026-11-26T16:00:00Z' },
-        attendees: [{ self: true, responseStatus: 'declined' }]
-      }, 'acc-1')
+      toMeeting(
+        {
+          id: 'd',
+          start: { dateTime: '2026-11-26T15:00:00Z' },
+          end: { dateTime: '2026-11-26T16:00:00Z' },
+          attendees: [{ self: true, responseStatus: 'declined' }]
+        },
+        'acc-1'
+      )
     ).toBeNull()
   })
 

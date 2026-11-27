@@ -18,7 +18,14 @@ describe('TasksFileStore', () => {
 
   it('keeps every field across a save and reload', () => {
     const tasks: PendingTask[] = [
-      { id: 't1', name: 'Revisar contrato', description: 'Línea 1\nLínea 2', project: 'Tenzor', status: 'in-progress', createdAt: '2026-11-26T12:00:00.000Z' },
+      {
+        id: 't1',
+        name: 'Revisar contrato',
+        description: 'Línea 1\nLínea 2',
+        project: 'Tenzor',
+        status: 'in-progress',
+        createdAt: '2026-11-26T12:00:00.000Z'
+      },
       { id: 't2', name: 'Llamar', description: '', project: '', status: 'done', createdAt: '2026-11-25T08:00:00.000Z' }
     ]
     new TasksFileStore().save(tasks)

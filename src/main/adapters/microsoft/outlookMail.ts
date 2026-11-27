@@ -131,10 +131,9 @@ export class OutlookMail implements MailProvider {
           )
         })
     )
-    return [
-      ...parents.filter((parent) => !hidden.has(parent.id)).map(({ id, name }) => ({ id, name })),
-      ...children.flat()
-    ].sort((a, b) => a.name.localeCompare(b.name))
+    return [...parents.filter((parent) => !hidden.has(parent.id)).map(({ id, name }) => ({ id, name })), ...children.flat()].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    )
   }
 
   /**

@@ -54,11 +54,7 @@ export function reminderKey(meeting: Meeting, thresholdMinutes: number): string 
  * so starting the app 4 minutes before a meeting yields one 5-minute alert instead of
  * a stale 15-minute alert followed by the 5-minute one.
  */
-export function dueReminders(
-  meetings: readonly Meeting[],
-  now: Date,
-  fired: ReadonlySet<string>
-): ReminderAlert[] {
+export function dueReminders(meetings: readonly Meeting[], now: Date, fired: ReadonlySet<string>): ReminderAlert[] {
   const alerts: ReminderAlert[] = []
   const nowMs = now.getTime()
 

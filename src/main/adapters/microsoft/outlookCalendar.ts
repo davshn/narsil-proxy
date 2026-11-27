@@ -5,8 +5,7 @@ import { graphRecurrence, localWallTime } from '../../domain/recurrence'
 import { GraphError, type GraphClient } from './graphClient'
 
 const LOOKAHEAD_MS = 24 * 60 * 60_000
-const EVENT_FIELDS =
-  'id,subject,start,end,location,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,webLink'
+const EVENT_FIELDS = 'id,subject,start,end,location,isAllDay,isCancelled,responseStatus,onlineMeeting,onlineMeetingUrl,webLink'
 const UTC_TIMES = { Prefer: 'outlook.timezone="UTC"' }
 
 /** Graph's dateTimeTimeZone in UTC: the wall time without a zone designator, plus `UTC`. */

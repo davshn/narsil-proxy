@@ -28,4 +28,16 @@ npm run typecheck
 npm run build
 ```
 
+```powershell
+npm run lint
+```
+
+```powershell
+npm run format:check
+```
+
+`npm run format` fixes what `format:check` reports. The CI workflow (`.github/workflows/ci.yml`) runs all five on every pull request and push to `main`.
+
+ESLint lives in `tools/eslint`, a separate package with its own lockfile, because typescript-eslint does not support TypeScript 7 yet: there it runs on TypeScript 6, while the app keeps TypeScript 7. `npm install` installs it through the root `postinstall` script.
+
 The Supabase policy tests (`npx supabase db start`, then `npx supabase test db`) need Docker and run against a local database, never the owner's project.

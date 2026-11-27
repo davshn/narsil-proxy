@@ -47,7 +47,10 @@ describe('calendar recurrence formats', () => {
   it('builds a weekly Google RRULE that ends at the end of the local last day', () => {
     const until = at(2027, 3, 16, 23, 59)
     until.setSeconds(59)
-    const stamp = until.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+    const stamp = until
+      .toISOString()
+      .replace(/[-:]/g, '')
+      .replace(/\.\d{3}/, '')
     expect(googleRecurrence({ days: ['TU', 'TH'], until: '2027-03-16' })).toEqual([`RRULE:FREQ=WEEKLY;BYDAY=TU,TH;UNTIL=${stamp}`])
   })
 

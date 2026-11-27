@@ -61,7 +61,7 @@ export function htmlToText(html: string): string {
       if (entity.startsWith('#')) return codePoint(parseInt(entity.slice(1), 10))
       return ENTITIES[entity.toLowerCase()] ?? match
     })
-    .replace(/[ \t ]+/g, ' ')
+    .replace(/[ \t\u00a0]+/g, ' ')
     .replace(/\s*\n\s*/g, '\n')
     .trim()
 }
@@ -129,6 +129,7 @@ function headerValue(value: string): string {
 }
 
 function encodeHeaderWord(value: string): string {
+  // eslint-disable-next-line no-control-regex
   return /^[\x00-\x7f]*$/.test(value) ? value : `=?UTF-8?B?${Buffer.from(value, 'utf8').toString('base64')}?=`
 }
 

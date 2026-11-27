@@ -7,9 +7,7 @@ export const MAX_REPLIES = 3
 
 export const TriageSchema = z.object({
   summary: z.string().describe('One sentence describing what the email is about and what it asks for.'),
-  recommendedAction: z
-    .enum(['reply', 'archive', 'delete', 'save'])
-    .describe('The single best next step for this email.'),
+  recommendedAction: z.enum(['reply', 'archive', 'delete', 'save']).describe('The single best next step for this email.'),
   reason: z.string().describe('A short justification for the recommended action.'),
   replies: z
     .array(

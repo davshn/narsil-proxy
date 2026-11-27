@@ -69,7 +69,12 @@ describe('SharedLists writes', () => {
     await lists.acceptInvitation(LIST)
     await lists.leave(LIST)
     expect(writes).toEqual([
-      { kind: 'update', table: 'list_members', values: { accepted_at: '2026-11-27T12:00:00.000Z' }, match: { list_id: LIST, email: 'ana@gmail.com' } },
+      {
+        kind: 'update',
+        table: 'list_members',
+        values: { accepted_at: '2026-11-27T12:00:00.000Z' },
+        match: { list_id: LIST, email: 'ana@gmail.com' }
+      },
       { kind: 'delete', table: 'list_members', match: { list_id: LIST, email: 'ana@gmail.com' } }
     ])
   })
@@ -90,7 +95,11 @@ describe('SharedLists writes', () => {
         table: 'shared_tasks',
         values: { list_id: LIST, name: 'Comprar pan', description: 'Integral', assignee_email: 'luis@gmail.com', created_by: 'u-ana' }
       },
-      { kind: 'insert', table: 'shared_tasks', values: { list_id: LIST, name: 'Barrer', description: '', assignee_email: null, created_by: 'u-ana' } }
+      {
+        kind: 'insert',
+        table: 'shared_tasks',
+        values: { list_id: LIST, name: 'Barrer', description: '', assignee_email: null, created_by: 'u-ana' }
+      }
     ])
   })
 
@@ -149,7 +158,10 @@ describe('SharedLists refusals', () => {
     const cases: [Answer['error'], string][] = [
       [{ message: 'new row violates row-level security policy', code: '42501' }, 'No tienes permiso para hacer eso en esta lista.'],
       [{ message: 'duplicate key value', code: '23505' }, 'Esa persona ya está invitada a la lista.'],
-      [{ message: 'insert or update violates foreign key constraint', code: '23503' }, 'Solo puedes asignar tareas a miembros que aceptaron la invitación.'],
+      [
+        { message: 'insert or update violates foreign key constraint', code: '23503' },
+        'Solo puedes asignar tareas a miembros que aceptaron la invitación.'
+      ],
       [{ message: 'El dueño no puede salir de su propia lista.', code: 'P0001' }, 'El dueño no puede salir de su propia lista.'],
       [{ message: 'TypeError: fetch failed' }, 'No se pudo guardar el cambio: TypeError: fetch failed']
     ]

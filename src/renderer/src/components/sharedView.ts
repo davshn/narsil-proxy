@@ -32,9 +32,7 @@ export const ownedByMe = (snapshot: SharedSnapshot, list: SharedList): boolean =
 /** Members who accepted, then pending invitations, each in the order they were added. */
 export function membersOf(snapshot: SharedSnapshot, listId: string): SharedMember[] {
   const pending = (m: SharedMember): number => (m.acceptedAt === null ? 1 : 0)
-  return snapshot.members
-    .filter((m) => m.listId === listId)
-    .sort((a, b) => pending(a) - pending(b) || a.addedAt.localeCompare(b.addedAt))
+  return snapshot.members.filter((m) => m.listId === listId).sort((a, b) => pending(a) - pending(b) || a.addedAt.localeCompare(b.addedAt))
 }
 
 /** The assignee and the creator change a task; the database checks the same. */

@@ -104,13 +104,7 @@ export function NarsilPet({ pose, variant = 'full' }: NarsilPetProps): React.JSX
   return (
     <span className={`pet pet--${variant}`} aria-hidden="true">
       {layers.map((l) => (
-        <img
-          key={l.id}
-          className={l.leaving ? 'pet__img pet__img--out' : 'pet__img'}
-          src={l.src}
-          alt=""
-          draggable={false}
-        />
+        <img key={l.id} className={l.leaving ? 'pet__img pet__img--out' : 'pet__img'} src={l.src} alt="" draggable={false} />
       ))}
     </span>
   )
@@ -123,15 +117,7 @@ export function Water(): React.JSX.Element {
   return (
     <svg className="water" viewBox="0 0 120 22" width="120" height="22" aria-hidden="true">
       {[0, 0.8, 1.6].map((delay) => (
-        <ellipse
-          key={delay}
-          className="water__ripple"
-          style={{ animationDelay: `${delay}s` }}
-          cx="60"
-          cy="12"
-          rx="30"
-          ry="5"
-        />
+        <ellipse key={delay} className="water__ripple" style={{ animationDelay: `${delay}s` }} cx="60" cy="12" rx="30" ry="5" />
       ))}
       <path className="water__wave" d={wave} />
     </svg>

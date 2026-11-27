@@ -114,10 +114,7 @@ describe('toMeetingFromGraph', () => {
   })
 
   it('treats Graph times without a zone designator as UTC', () => {
-    const meeting = toMeetingFromGraph(
-      event({ start: { dateTime: '2026-11-26T08:05:00.0000000', timeZone: 'UTC' } }),
-      ACCOUNT
-    )
+    const meeting = toMeetingFromGraph(event({ start: { dateTime: '2026-11-26T08:05:00.0000000', timeZone: 'UTC' } }), ACCOUNT)
     expect(meeting?.start).toBe('2026-11-26T08:05:00.000Z')
   })
 
@@ -134,10 +131,7 @@ describe('toMeetingFromGraph', () => {
   })
 
   it('uses onlineMeetingUrl when there is no joinUrl', () => {
-    const meeting = toMeetingFromGraph(
-      event({ onlineMeeting: null, onlineMeetingUrl: 'https://meet.contoso.com/123' }),
-      ACCOUNT
-    )
+    const meeting = toMeetingFromGraph(event({ onlineMeeting: null, onlineMeetingUrl: 'https://meet.contoso.com/123' }), ACCOUNT)
     expect(meeting?.link).toBe('https://meet.contoso.com/123')
   })
 

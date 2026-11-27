@@ -143,9 +143,7 @@ export async function migrateLegacyGoogleTokens(migration: LegacyGoogleMigration
     throw error
   }
   // Read again: an account may have been added while the profile lookup ran.
-  const sameMailbox = accounts
-    .list()
-    .some((a) => a.provider === 'google' && a.email.toLowerCase() === email.toLowerCase())
+  const sameMailbox = accounts.list().some((a) => a.provider === 'google' && a.email.toLowerCase() === email.toLowerCase())
   if (sameMailbox) {
     store.delete(copy)
     store.delete('google-tokens')

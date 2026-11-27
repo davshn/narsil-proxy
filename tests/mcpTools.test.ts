@@ -41,9 +41,20 @@ const item: InboxItem = {
   triage: { summary: 'Envía una factura', recommendedAction: 'save', reason: 'Es un documento', replies: [] }
 }
 
-const meeting: Meeting = { id: 'a2:e1', accountId: 'a2', title: 'Daily', start: '2026-11-27T13:00:00.000Z', end: '2026-11-27T13:15:00.000Z' }
+const meeting: Meeting = {
+  id: 'a2:e1',
+  accountId: 'a2',
+  title: 'Daily',
+  start: '2026-11-27T13:00:00.000Z',
+  end: '2026-11-27T13:15:00.000Z'
+}
 
-function setup(): { handlers: ReturnType<typeof createMcpHandlers>; repo: MemoryRepo; changed: ReturnType<typeof vi.fn>; service: McpServiceView } {
+function setup(): {
+  handlers: ReturnType<typeof createMcpHandlers>
+  repo: MemoryRepo
+  changed: ReturnType<typeof vi.fn>
+  service: McpServiceView
+} {
   const repo = new MemoryRepo()
   let n = 0
   const tasks = new TaskList(repo, { newId: () => `t${++n}`, now: () => new Date('2026-11-26T12:00:00Z') })
@@ -61,7 +72,21 @@ function setup(): { handlers: ReturnType<typeof createMcpHandlers>; repo: Memory
     saveServerRule: vi.fn(async () => undefined)
   }
   const changed = vi.fn()
-  return { handlers: createMcpHandlers({ service, tasks, tasksChanged: changed, shared: { apply: async () => ({ ok: true, state: { signedIn: false, snapshot: null } }), refresh: async () => ({ signedIn: false, snapshot: null }), state: () => ({ signedIn: false, snapshot: null }) } }), repo, changed, service }
+  return {
+    handlers: createMcpHandlers({
+      service,
+      tasks,
+      tasksChanged: changed,
+      shared: {
+        apply: async () => ({ ok: true, state: { signedIn: false, snapshot: null } }),
+        refresh: async () => ({ signedIn: false, snapshot: null }),
+        state: () => ({ signedIn: false, snapshot: null })
+      }
+    }),
+    repo,
+    changed,
+    service
+  }
 }
 
 describe('createMcpHandlers', () => {
@@ -99,7 +124,7 @@ describe('createMcpHandlers', () => {
     expect(await setup().handlers.get_meetings({})).toEqual([{ ...meeting, account: 'yo@outlook.com' }])
   })
 
-  it('get_rules returns local rules and each account\'s server rules', async () => {
+  it("get_rules returns local rules and each account's server rules", async () => {
     expect(await setup().handlers.get_rules({})).toEqual({
       localRules: [],
       accounts: [{ accountId: 'a1', account: 'yo@gmail.com', rules: [], loaded: true, needsReconnect: false }]
@@ -124,7 +149,14 @@ describe('Pendientes through MCP', () => {
   it('adds a task as todo, stores it and tells the window', async () => {
     const { handlers, repo, changed } = setup()
     const result = await handlers.save_task({ name: 'Llamar a Ana', project: 'Casa' })
-    const task: PendingTask = { id: 't1', name: 'Llamar a Ana', description: '', project: 'Casa', status: 'todo', createdAt: '2026-11-26T12:00:00.000Z' }
+    const task: PendingTask = {
+      id: 't1',
+      name: 'Llamar a Ana',
+      description: '',
+      project: 'Casa',
+      status: 'todo',
+      createdAt: '2026-11-26T12:00:00.000Z'
+    }
     expect(result).toEqual(task)
     expect(repo.tasks).toEqual([task])
     expect(changed).toHaveBeenCalledWith([task])
@@ -253,7 +285,14 @@ describe('meetings and rules through MCP', () => {
 
   it('create_server_rule creates it in the account and returns that account rules', async () => {
     const { handlers, service } = setup()
-    const result = await handlers.create_server_rule({ accountId: 'a1', name: 'Facturas', subject: 'factura', action: 'move', folderId: 'L1', folderName: 'Facturas' })
+    const result = await handlers.create_server_rule({
+      accountId: 'a1',
+      name: 'Facturas',
+      subject: 'factura',
+      action: 'move',
+      folderId: 'L1',
+      folderName: 'Facturas'
+    })
     expect(service.saveServerRule).toHaveBeenCalledWith({
       accountId: 'a1',
       name: 'Facturas',

@@ -91,9 +91,7 @@ afterEach(() => {
 describe('MicrosoftProvider configuration', () => {
   it('rejects a client id that is not a GUID with the exact Spanish message', () => {
     const provider = new MicrosoftProvider(fakeStore())
-    expect(() => provider.saveClientId('not-a-guid')).toThrow(
-      new Error('El Application (client) ID de Microsoft debe ser un GUID.')
-    )
+    expect(() => provider.saveClientId('not-a-guid')).toThrow(new Error('El Application (client) ID de Microsoft debe ser un GUID.'))
     expect(provider.isConfigured()).toBe(false)
   })
 
@@ -168,9 +166,7 @@ describe('MicrosoftProvider accounts', () => {
   it('returns the existing account id when the same Microsoft account signs in again', async () => {
     msal.acquireTokenInteractive.mockResolvedValue({ accessToken: 'secret-token', account: msal.account })
     // The first /me answers with the work address, the second fails: the emails differ.
-    fetchMock
-      .mockResolvedValueOnce(respond(200, { mail: 'ana.perez@contoso.com' }))
-      .mockResolvedValueOnce(respond(503, {}))
+    fetchMock.mockResolvedValueOnce(respond(200, { mail: 'ana.perez@contoso.com' })).mockResolvedValueOnce(respond(503, {}))
     const store = fakeStore({ 'microsoft-client': CLIENT_ID })
     const provider = new MicrosoftProvider(store)
 
@@ -455,9 +451,25 @@ describe('Outlook calendar through Microsoft Graph', () => {
     fetchMock.mockImplementation(async () =>
       respond(200, {
         value: [
-          { id: 'late', subject: 'B', start: { dateTime: '2026-11-25T18:00:00.0000000' }, end: { dateTime: '2026-11-25T19:00:00.0000000' } },
-          { id: 'allday', subject: 'X', isAllDay: true, start: { dateTime: '2026-11-25T00:00:00.0000000' }, end: { dateTime: '2026-11-26T00:00:00.0000000' } },
-          { id: 'early', subject: 'A', start: { dateTime: '2026-11-25T13:00:00.0000000' }, end: { dateTime: '2026-11-25T13:30:00.0000000' } }
+          {
+            id: 'late',
+            subject: 'B',
+            start: { dateTime: '2026-11-25T18:00:00.0000000' },
+            end: { dateTime: '2026-11-25T19:00:00.0000000' }
+          },
+          {
+            id: 'allday',
+            subject: 'X',
+            isAllDay: true,
+            start: { dateTime: '2026-11-25T00:00:00.0000000' },
+            end: { dateTime: '2026-11-26T00:00:00.0000000' }
+          },
+          {
+            id: 'early',
+            subject: 'A',
+            start: { dateTime: '2026-11-25T13:00:00.0000000' },
+            end: { dateTime: '2026-11-25T13:30:00.0000000' }
+          }
         ]
       })
     )
@@ -612,7 +624,9 @@ describe('Outlook new meetings through Microsoft Graph', () => {
   it('turns a 403 ErrorAccessDenied into ReconnectRequiredError', async () => {
     const { ReconnectRequiredError } = await import('../src/main/app/ports')
     fetchMock.mockImplementation(async () => respond(403, { error: { code: 'ErrorAccessDenied', message: 'Access is denied.' } }))
-    const error = await connect().calendar.createEvent(NEW).catch((e: unknown) => e)
+    const error = await connect()
+      .calendar.createEvent(NEW)
+      .catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ReconnectRequiredError)
     expect((error as Error).message).toBe('Reconecta esta cuenta para agregar reuniones.')
   })
@@ -623,7 +637,12 @@ describe('Outlook inbox rules through Microsoft Graph', () => {
   const when = { from: 'shop.example', subject: '', body: '' }
 
   /** Graph with an Archive folder, existing rules and one named folder. */
-  function ruleServer(rules: unknown[] = [{ id: 'r1', sequence: 3 }, { id: 'r2', sequence: 1 }]): void {
+  function ruleServer(
+    rules: unknown[] = [
+      { id: 'r1', sequence: 3 },
+      { id: 'r2', sequence: 1 }
+    ]
+  ): void {
     fetchMock.mockImplementation(async (input, init) => {
       const url = new URL(String(input))
       const path = decodeURIComponent(url.pathname.replace('/v1.0', ''))
@@ -690,7 +709,12 @@ describe('Outlook inbox rules through Microsoft Graph', () => {
 
   it('lists rules, telling archive from move and naming the move folder', async () => {
     ruleServer([
-      { id: 'r1', displayName: 'Archivar tienda', conditions: { senderContains: ['shop.example'] }, actions: { moveToFolder: 'id-archive' } },
+      {
+        id: 'r1',
+        displayName: 'Archivar tienda',
+        conditions: { senderContains: ['shop.example'] },
+        actions: { moveToFolder: 'id-archive' }
+      },
       {
         id: 'r2',
         displayName: 'Trabajo',
@@ -842,9 +866,7 @@ describe('MicrosoftProvider reconnect', () => {
   })
 
   it('refuses to reconnect an unknown account', async () => {
-    await expect(new MicrosoftProvider(connectedStore()).reconnect('missing', 'a@b.c')).rejects.toThrow(
-      'Esta cuenta ya no está conectada.'
-    )
+    await expect(new MicrosoftProvider(connectedStore()).reconnect('missing', 'a@b.c')).rejects.toThrow('Esta cuenta ya no está conectada.')
     expect(msal.acquireTokenInteractive).not.toHaveBeenCalled()
   })
 })

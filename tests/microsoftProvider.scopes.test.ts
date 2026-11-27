@@ -25,9 +25,7 @@ vi.mock('electron', () => ({ shell: { openExternal: vi.fn(async () => {}) } }))
 const { MicrosoftProvider } = await import('../src/main/adapters/microsoft/provider')
 
 function store(): SecureStore {
-  const data = new Map(
-    Object.entries({ 'microsoft-client': '11111111-2222-3333-4444-555555555555', 'microsoft-account.acc-1': 'home-1' })
-  )
+  const data = new Map(Object.entries({ 'microsoft-client': '11111111-2222-3333-4444-555555555555', 'microsoft-account.acc-1': 'home-1' }))
   return {
     get: (n: string) => data.get(n) ?? null,
     getStrict: (n: string) => data.get(n) ?? null,
@@ -48,7 +46,14 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('Outlook accounts consented before meetings could be added', () => {
   it('still list rules with MailboxSettings.ReadWrite and Calendars.Read', async () => {
-    msal.granted.scopes = new Set(['Mail.ReadWrite', 'Mail.Send', 'MailboxSettings.ReadWrite', 'Calendars.Read', 'User.Read', 'offline_access'])
+    msal.granted.scopes = new Set([
+      'Mail.ReadWrite',
+      'Mail.Send',
+      'MailboxSettings.ReadWrite',
+      'Calendars.Read',
+      'User.Read',
+      'offline_access'
+    ])
     const connection = new MicrosoftProvider(store()).connect('acc-1')!
     await expect(connection.rules.list()).resolves.toBeDefined()
   })

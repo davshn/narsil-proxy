@@ -164,7 +164,9 @@ function ListView({ snapshot, list, act }: { snapshot: SharedSnapshot; list: Sha
       <div className="shared__list-head">
         <h3 className="tasks__project">
           {list.name}
-          <span className="tasks__count">{tasks.length === 0 ? 'sin tareas' : pending === 0 ? 'todo terminado' : `${pending} sin terminar`}</span>
+          <span className="tasks__count">
+            {tasks.length === 0 ? 'sin tareas' : pending === 0 ? 'todo terminado' : `${pending} sin terminar`}
+          </span>
         </h3>
         {!editing && (
           <button type="button" className="btn btn--primary" onClick={() => setEditing('new')}>
@@ -287,7 +289,11 @@ function Members({ snapshot, list, act }: { snapshot: SharedSnapshot; list: Shar
               {m.acceptedAt === null && <span className="shared__pending"> invitación pendiente</span>}
             </span>
             {owner && m.email !== snapshot.email && (
-              <button type="button" className="link-btn link-btn--danger" onClick={() => void act({ type: 'removeMember', listId: list.id, email: m.email })}>
+              <button
+                type="button"
+                className="link-btn link-btn--danger"
+                onClick={() => void act({ type: 'removeMember', listId: list.id, email: m.email })}
+              >
                 Quitar
               </button>
             )}

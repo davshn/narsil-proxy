@@ -119,15 +119,11 @@ describe('buildReplyRaw', () => {
     expect(headerBlock).toContain(`Subject: =?UTF-8?B?${Buffer.from('Re: Reunión').toString('base64')}?=`)
     expect(headerBlock).toContain('Content-Type: text/plain; charset="UTF-8"')
     expect(headerBlock).toContain('Content-Transfer-Encoding: base64')
-    expect(Buffer.from(bodyBlock.replace(/\r\n/g, ''), 'base64').toString('utf8')).toBe(
-      'Sí, mañana a las 10 está perfecto.'
-    )
+    expect(Buffer.from(bodyBlock.replace(/\r\n/g, ''), 'base64').toString('utf8')).toBe('Sí, mañana a las 10 está perfecto.')
   })
 
   it('strips CR and LF from header values to prevent header injection', () => {
-    const injected = decodeRaw(
-      buildReplyRaw({ to: 'a@example.com\r\nBcc: evil@example.com', subject: 'Hi\nBcc: x', body: 'ok' })
-    )
+    const injected = decodeRaw(buildReplyRaw({ to: 'a@example.com\r\nBcc: evil@example.com', subject: 'Hi\nBcc: x', body: 'ok' }))
     const headers = injected.split('\r\n\r\n')[0] ?? ''
     expect(headers.split('\r\n').some((line) => line.startsWith('Bcc:'))).toBe(false)
   })

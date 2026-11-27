@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import {
-  AccountRegistry,
-  LEGACY_GOOGLE_ACCOUNT_ID,
-  migrateLegacyGoogleTokens,
-  type SecretStore
-} from '../src/main/app/accounts'
+import { AccountRegistry, LEGACY_GOOGLE_ACCOUNT_ID, migrateLegacyGoogleTokens, type SecretStore } from '../src/main/app/accounts'
 import type { SecretName } from '../src/main/adapters/secureStore'
 
 function memoryStore(initial: Record<string, string> = {}): SecretStore & { data: Map<string, string> } {
@@ -30,9 +25,7 @@ const DEFAULTS = { includeCategories: false, windowDays: 2 }
 describe('AccountRegistry settings', () => {
   it('reads an entry stored without settings as the default settings', () => {
     const store = memoryStore({ accounts: JSON.stringify([{ id: 'g1', provider: 'google', email: 'ana@gmail.com' }]) })
-    expect(new AccountRegistry(store).list()).toEqual([
-      { id: 'g1', provider: 'google', email: 'ana@gmail.com', settings: DEFAULTS }
-    ])
+    expect(new AccountRegistry(store).list()).toEqual([{ id: 'g1', provider: 'google', email: 'ana@gmail.com', settings: DEFAULTS }])
   })
 
   it('reads invalid settings as the defaults instead of damaging the whole list', () => {
@@ -55,17 +48,12 @@ describe('AccountRegistry settings', () => {
       email: 'beto@gmail.com',
       settings: { includeCategories: true, windowDays: 30 }
     })
-    expect(new AccountRegistry(store).list().map((a) => a.settings)).toEqual([
-      DEFAULTS,
-      { includeCategories: true, windowDays: 30 }
-    ])
+    expect(new AccountRegistry(store).list().map((a) => a.settings)).toEqual([DEFAULTS, { includeCategories: true, windowDays: 30 }])
   })
 
   it('refuses settings for an account that is not registered', () => {
     const registry = new AccountRegistry(memoryStore())
-    expect(() => registry.setSettings('nope', { includeCategories: true, windowDays: 7 })).toThrow(
-      'Esta cuenta ya no está conectada.'
-    )
+    expect(() => registry.setSettings('nope', { includeCategories: true, windowDays: 7 })).toThrow('Esta cuenta ya no está conectada.')
   })
 })
 
@@ -192,9 +180,7 @@ describe('migrateLegacyGoogleTokens', () => {
       if (name === 'google-tokens') throw new Error('crash')
       realDelete(name)
     }
-    await expect(
-      migrateLegacyGoogleTokens({ store, accounts, fetchEmail: async () => 'ana@gmail.com' })
-    ).rejects.toThrow('crash')
+    await expect(migrateLegacyGoogleTokens({ store, accounts, fetchEmail: async () => 'ana@gmail.com' })).rejects.toThrow('crash')
     store.delete = realDelete
     const fetchEmail = vi.fn(async () => 'ana@gmail.com')
 
@@ -214,9 +200,7 @@ describe('migrateLegacyGoogleTokens', () => {
       if (name === 'accounts') throw new Error('crash')
       realSet(name, value)
     }
-    await expect(
-      migrateLegacyGoogleTokens({ store, accounts, fetchEmail: async () => 'a@gmail.com' })
-    ).rejects.toThrow('crash')
+    await expect(migrateLegacyGoogleTokens({ store, accounts, fetchEmail: async () => 'a@gmail.com' })).rejects.toThrow('crash')
     store.set = realSet
 
     // The next start is offline: the copy must not stay behind as an unregistered secret.

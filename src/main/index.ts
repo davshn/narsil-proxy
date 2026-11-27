@@ -317,7 +317,10 @@ const NewMeetingSchema = z.object({
   title: z.string().max(MAX_MEETING_TITLE * 2),
   start: z.string().min(1).max(64),
   end: z.string().min(1).max(64),
-  location: z.string().max(MAX_MEETING_LOCATION * 2).optional(),
+  location: z
+    .string()
+    .max(MAX_MEETING_LOCATION * 2)
+    .optional(),
   repeat: z.object({ days: z.array(z.enum(WEEKDAYS)).max(14), until: z.string().max(10) }).optional()
 })
 const ConvertTargetSchema = z
@@ -358,9 +361,7 @@ function registerIpc(svc: NarsilService): void {
   ipcMain.handle(IPC.setAccountSettings, (_e, accountId: unknown, settings: unknown) =>
     run(() => svc.setAccountSettings(AccountId.parse(accountId), AccountSettingsSchema.parse(settings)))
   )
-  ipcMain.handle(IPC.sendReply, (_e, key: unknown, body: unknown) =>
-    run(() => svc.sendReply(ItemKey.parse(key), ReplyBody.parse(body)))
-  )
+  ipcMain.handle(IPC.sendReply, (_e, key: unknown, body: unknown) => run(() => svc.sendReply(ItemKey.parse(key), ReplyBody.parse(body))))
   ipcMain.handle(IPC.importGoogleClient, () =>
     run(async () => {
       const result = await dialog.showOpenDialog({
@@ -464,9 +465,12 @@ function registerSharedIpc(shared: SharedAuth, sync: SharedSync, lists: SharedLi
 
 /** Lets Claude reach this Narsil through the MCP bridge (out/main/mcp.js). */
 function startMcp(svc: NarsilService, tasks: TaskList, shared: SharedMcpDeps): void {
-  const server = new McpPipeServer(createMcpHandlers({ service: svc, tasks, tasksChanged: (list) => send(IPC.tasksChanged, list), shared }), {
-    file: mcpDiscoveryFile(process.env, homedir())
-  })
+  const server = new McpPipeServer(
+    createMcpHandlers({ service: svc, tasks, tasksChanged: (list) => send(IPC.tasksChanged, list), shared }),
+    {
+      file: mcpDiscoveryFile(process.env, homedir())
+    }
+  )
   server.start().then(
     () => {
       mcp = server

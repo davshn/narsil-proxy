@@ -42,8 +42,7 @@ export function messageRuleBody(rule: NewServerRule, sequence: number, archiveId
   for (const field of Object.keys(PREDICATE) as Array<keyof RuleConditions>) {
     if (rule.conditions[field]) conditions[PREDICATE[field]] = [rule.conditions[field]]
   }
-  const target =
-    rule.action === 'delete' ? { delete: true } : { moveToFolder: rule.action === 'archive' ? archiveId : rule.folderId }
+  const target = rule.action === 'delete' ? { delete: true } : { moveToFolder: rule.action === 'archive' ? archiveId : rule.folderId }
   // stopProcessingRules is one of the rule's actions (messageRuleActions); Graph rejects it on the rule.
   const actions = { ...target, stopProcessingRules: false }
   return { displayName: rule.name, sequence, isEnabled: rule.enabled !== false, conditions, actions }
@@ -114,9 +113,7 @@ export class OutlookRules implements RuleProvider {
           return typeof id === 'string' && id && id !== archiveId ? [id] : []
         })
       )
-      const names = new Map(
-        await Promise.all([...folderIds].map(async (id): Promise<[string, string]> => [id, await this.folderName(id)]))
-      )
+      const names = new Map(await Promise.all([...folderIds].map(async (id): Promise<[string, string]> => [id, await this.folderName(id)])))
       return rules.flatMap((r) => messageRuleToServerRule(r, this.accountId, archiveId, names) ?? [])
     })
   }

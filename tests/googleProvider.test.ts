@@ -303,19 +303,16 @@ describe('GoogleProvider', () => {
     scope: ALL_SCOPES.filter((s) => s !== scope).join(' ')
   })
 
-  it.each(['gmail.modify', 'gmail.send', 'calendar.events'])(
-    'keeps the old tokens when a reconnect grant lacks %s',
-    async (missing) => {
-      const old = JSON.stringify({ refresh_token: 'r1', scope: ALL_SCOPES.join(' ') })
-      const store = memoryStore({ 'google-client': CLIENT, 'google-tokens.a1': old })
-      const { provider, clients } = makeProvider(store, { tokens: grantWithout(`https://www.googleapis.com/auth/${missing}`) })
+  it.each(['gmail.modify', 'gmail.send', 'calendar.events'])('keeps the old tokens when a reconnect grant lacks %s', async (missing) => {
+    const old = JSON.stringify({ refresh_token: 'r1', scope: ALL_SCOPES.join(' ') })
+    const store = memoryStore({ 'google-client': CLIENT, 'google-tokens.a1': old })
+    const { provider, clients } = makeProvider(store, { tokens: grantWithout(`https://www.googleapis.com/auth/${missing}`) })
 
-      await expect(provider.reconnect('a1', 'ana@gmail.com')).rejects.toThrow(MISSING_SCOPES)
+    await expect(provider.reconnect('a1', 'ana@gmail.com')).rejects.toThrow(MISSING_SCOPES)
 
-      expect(store.data.get('google-tokens.a1')).toBe(old)
-      expect(clients.every((c) => vi.mocked(c.revokeToken).mock.calls.length === 0)).toBe(true)
-    }
-  )
+    expect(store.data.get('google-tokens.a1')).toBe(old)
+    expect(clients.every((c) => vi.mocked(c.revokeToken).mock.calls.length === 0)).toBe(true)
+  })
 
   it('stores nothing when a new account grant lacks the mail scope', async () => {
     const store = memoryStore({ 'google-client': CLIENT })

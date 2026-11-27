@@ -17,8 +17,7 @@ const { ReconnectRequiredError } = await import('../src/main/app/ports')
 
 const EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events'
 const READONLY_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly'
-const service = (scope?: string) =>
-  new CalendarService({ credentials: scope === undefined ? {} : { scope } } as OAuth2Client, 'g1')
+const service = (scope?: string) => new CalendarService({ credentials: scope === undefined ? {} : { scope } } as OAuth2Client, 'g1')
 
 const NEW = { title: 'Revisión', start: '2026-11-26T15:00:00.000Z', end: '2026-11-26T15:30:00.000Z', location: 'Sala 2' }
 const MEETING_RECONNECT = 'Reconecta esta cuenta para agregar reuniones.'
@@ -89,7 +88,9 @@ describe('Google Calendar new meetings', () => {
         errors: [{ reason: 'insufficientPermissions' }]
       })
     )
-    const error = await service().createEvent(NEW).catch((e: unknown) => e)
+    const error = await service()
+      .createEvent(NEW)
+      .catch((e: unknown) => e)
     expect(error).toBeInstanceOf(ReconnectRequiredError)
     expect((error as Error).message).toBe(MEETING_RECONNECT)
   })

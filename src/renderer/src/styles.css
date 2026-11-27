@@ -6,27 +6,111 @@
  */
 
 /* Registered as colors so a theme change cross-fades every token (and the gradients built from them). */
-@property --surface-0 { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --surface-1 { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --surface-2 { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --surface-3 { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --text-0 { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --text-1 { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --text-2 { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --accent { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --accent-text { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --accent-fill { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --on-accent { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --danger-text { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --danger-soft { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --success { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --warning { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --warning-soft { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --warning-fill { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --on-warning { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --line { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --water { syntax: '<color>'; inherits: true; initial-value: transparent; }
-@property --shadow { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --surface-0 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --surface-1 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --surface-2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --surface-3 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --text-0 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --text-1 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --text-2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --accent-text {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --accent-fill {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --on-accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --danger-text {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --danger-soft {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --success {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --warning {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --warning-soft {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --warning-fill {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --on-warning {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --line {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --water {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+@property --shadow {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
 
 /* Dark (narsil-skin "narsil"): also the default until the clock sets data-theme. */
 :root,

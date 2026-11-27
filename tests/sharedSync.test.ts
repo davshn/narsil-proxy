@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SharedSnapshot, SharedState } from '@shared/types'
 import type { SharedSession, SharedTable } from '../src/main/app/sharedAuth'
-import { SHARED_POLL_MS, SharedSync, type SharedAssignment, type SharedCacheRepository, type SharedInvitation } from '../src/main/app/sharedSync'
+import {
+  SHARED_POLL_MS,
+  SharedSync,
+  type SharedAssignment,
+  type SharedCacheRepository,
+  type SharedInvitation
+} from '../src/main/app/sharedSync'
 
 const ANA = { id: 'u-ana', email: 'ana@gmail.com', name: 'Ana Pérez' }
 const LUIS = { id: 'u-luis', email: 'luis@gmail.com', name: 'Luis Gómez' }
@@ -69,7 +75,13 @@ interface Fake {
 }
 
 function setup(options: { cache?: MemoryCache; rows?: Rows } = {}) {
-  const fake: Fake = { rows: options.rows ?? anaRows(), user: { id: ANA.id, email: ANA.email }, failure: null, sessionFailure: null, sessions: 0 }
+  const fake: Fake = {
+    rows: options.rows ?? anaRows(),
+    user: { id: ANA.id, email: ANA.email },
+    failure: null,
+    sessionFailure: null,
+    sessions: 0
+  }
   const cache = options.cache ?? new MemoryCache()
   const states: SharedState[] = []
   const assigned: SharedAssignment[][] = []
