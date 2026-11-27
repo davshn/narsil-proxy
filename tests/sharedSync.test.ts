@@ -82,7 +82,8 @@ function setup(options: { cache?: MemoryCache; rows?: Rows } = {}) {
         return {
           ...fake.user,
           select: async (table) =>
-            fake.failure ? { data: null, error: { message: fake.failure } } : { data: structuredClone(fake.rows[table]), error: null }
+            fake.failure ? { data: null, error: { message: fake.failure } } : { data: structuredClone(fake.rows[table]), error: null },
+          write: async () => ({ error: null, count: 1 })
         }
       }
     },

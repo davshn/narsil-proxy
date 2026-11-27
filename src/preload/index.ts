@@ -45,6 +45,7 @@ const api: NarsilApi = {
   getSharedState: () => ipcRenderer.invoke(IPC.getSharedState),
   refreshShared: () => ipcRenderer.invoke(IPC.refreshShared),
   onSharedChanged: (listener) => subscribe(IPC.sharedChanged, listener),
+  sharedAction: (action) => ipcRenderer.invoke(IPC.sharedAction, action),
   onServerRulesChanged: (listener) => subscribe(IPC.serverRulesChanged, listener),
   onRulesChanged: (listener) => subscribe(IPC.rulesChanged, listener),
   onTasksChanged: (listener) => subscribe(IPC.tasksChanged, listener),

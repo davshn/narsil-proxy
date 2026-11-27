@@ -45,12 +45,27 @@ export type SelectRows = (
   columns: string
 ) => Promise<{ data: unknown[] | null; error: { message: string } | null }>
 
-/** The signed-in user, and a way to read rows with their session. */
+type Row = Record<string, string | null>
+
+/** One insert, update or delete; `match` picks the rows by equality on every column it names. */
+export type SharedWrite =
+  | { kind: 'insert'; table: SharedTable; values: Row }
+  | { kind: 'update'; table: SharedTable; values: Row; match: Record<string, string> }
+  | { kind: 'delete'; table: SharedTable; match: Record<string, string> }
+
+/**
+ * Runs a write with the session. `count` is how many rows it touched: row level security turns
+ * a forbidden update or delete into zero rows, not an error.
+ */
+export type WriteRows = (write: SharedWrite) => Promise<{ error: { message: string; code?: string } | null; count: number | null }>
+
+/** The signed-in user, and a way to read and write rows with their session. */
 export interface SharedSession {
   id: string
   /** Lowercase, as the database keeps it. */
   email: string
   select: SelectRows
+  write: WriteRows
 }
 
 /** The part of Supabase's client Narsil uses: auth, and reading rows with the session. */
@@ -69,6 +84,7 @@ export interface AuthClient {
   /** Stops the background token refresh of a client Narsil no longer uses. */
   stopAutoRefresh(): Promise<void>
   select: SelectRows
+  write: WriteRows
 }
 
 export interface SharedAuthDeps {
@@ -171,7 +187,7 @@ export class SharedAuth {
     if (error) throw new Error(error.message)
     const user = data.session?.user
     if (!user?.email) return null
-    return { id: user.id, email: user.email.toLowerCase(), select: (table, columns) => auth.select(table, columns) }
+    return { id: user.id, email: user.email.toLowerCase(), select: (table, columns) => auth.select(table, columns), write: (write) => auth.write(write) }
   }
 
   /** Saves the project; a session from another project means nothing here, so it is dropped. */
