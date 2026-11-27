@@ -703,6 +703,84 @@ textarea {
   gap: 8px;
 }
 
+.meeting-form .meeting-form__repeat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-1);
+}
+
+.meeting-form .meeting-form__repeat input {
+  margin: 0;
+  accent-color: var(--accent-fill);
+}
+
+/* A weekly series: the days and the end date, set apart from the single-meeting fields. */
+.meeting-form__series {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.meeting-form__series legend {
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.meeting-form__days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.meeting-form .day-toggle {
+  position: relative;
+  display: block;
+}
+
+.meeting-form .day-toggle input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.day-toggle span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-1);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.day-toggle input:checked + span {
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+.day-toggle input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.meeting-form__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
 .meeting-form__error {
   margin: 0;
   color: var(--danger-text);

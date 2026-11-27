@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultTimes, shiftEnd, toIso } from '../src/renderer/src/components/meetingTimes'
+import { addDays, defaultTimes, shiftEnd, toIso, weekdayOf } from '../src/renderer/src/components/meetingTimes'
 
 describe('Agregar reunión defaults', () => {
   it('starts at the next half hour today and lasts 30 minutes', () => {
@@ -30,5 +30,22 @@ describe('toIso', () => {
 
   it('keeps unparseable input as typed', () => {
     expect(toIso('', '15:00')).toBe('T15:00')
+  })
+})
+
+describe('repeat helpers', () => {
+  it('names the weekday of a date in calendar codes', () => {
+    expect(weekdayOf('2026-12-01')).toBe('TU')
+    expect(weekdayOf('2026-12-06')).toBe('SU')
+  })
+
+  it('adds days across months and years', () => {
+    expect(addDays('2026-12-01', 56)).toBe('2027-01-26')
+    expect(addDays('2026-12-31', 1)).toBe('2027-01-01')
+  })
+
+  it('leaves a date it cannot read as it is', () => {
+    expect(addDays('', 7)).toBe('')
+    expect(weekdayOf('')).toBeNull()
   })
 })

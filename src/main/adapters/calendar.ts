@@ -1,3 +1,4 @@
+import { googleRecurrence } from '../domain/recurrence'
 import { calendar, type calendar_v3 } from '@googleapis/calendar'
 import type { OAuth2Client } from 'google-auth-library'
 import type { Meeting, NewMeeting } from '@shared/types'
@@ -54,7 +55,9 @@ export class CalendarService implements CalendarProvider {
       summary: input.title,
       ...(input.location ? { location: input.location } : {}),
       start: { dateTime: input.start, timeZone },
-      end: { dateTime: input.end, timeZone }
+      end: { dateTime: input.end, timeZone },
+      // Google reads BYDAY in `timeZone`, so a 19:00 Tuesday class stays on Tuesdays.
+      ...(input.repeat ? { recurrence: googleRecurrence(input.repeat) } : {})
     }
     let res: { data: calendar_v3.Schema$Event }
     try {

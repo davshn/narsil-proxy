@@ -1,3 +1,4 @@
+import { planWeekly } from '../domain/recurrence'
 import { randomUUID } from 'node:crypto'
 import type {
   Account,
@@ -122,11 +123,14 @@ function validMeeting(input: NewMeeting): NewMeeting {
   if (location && location.length > MAX_MEETING_LOCATION) {
     throw new Error(`La ubicación admite hasta ${MAX_MEETING_LOCATION} caracteres.`)
   }
+  // A series starts on its first real occurrence, which may be a few days after the date chosen.
+  const plan = input.repeat ? planWeekly(new Date(start), new Date(end), input.repeat) : null
   return {
     title,
-    start: new Date(start).toISOString(),
-    end: new Date(end).toISOString(),
-    ...(location ? { location } : {})
+    start: (plan?.start ?? new Date(start)).toISOString(),
+    end: (plan?.end ?? new Date(end)).toISOString(),
+    ...(location ? { location } : {}),
+    ...(plan ? { repeat: plan.repeat } : {})
   }
 }
 

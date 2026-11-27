@@ -1,6 +1,7 @@
-import type { Meeting, NewMeeting } from '@shared/types'
+import type { Meeting, NewMeeting, WeeklyRepeat } from '@shared/types'
 import { MEETING_RECONNECT, ReconnectRequiredError, type CalendarProvider } from '../../app/ports'
 import { toMeetingFromGraph, type GraphEventLike } from '../../domain/graph'
+import { graphRecurrence, localWallTime } from '../../domain/recurrence'
 import { GraphError, type GraphClient } from './graphClient'
 
 const LOOKAHEAD_MS = 24 * 60 * 60_000
@@ -11,6 +12,20 @@ const UTC_TIMES = { Prefer: 'outlook.timezone="UTC"' }
 /** Graph's dateTimeTimeZone in UTC: the wall time without a zone designator, plus `UTC`. */
 function utcDateTime(iso: string): { dateTime: string; timeZone: string } {
   return { dateTime: new Date(iso).toISOString().slice(0, -1), timeZone: 'UTC' }
+}
+
+/**
+ * A weekly series in the local time zone (an IANA name, which Graph accepts). In UTC, a 19:00
+ * Tuesday class in Bogotá would fall on Wednesdays and drift with daylight-saving time.
+ */
+function localSeries(input: NewMeeting, repeat: WeeklyRepeat): Record<string, unknown> {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const start = new Date(input.start)
+  return {
+    start: { dateTime: localWallTime(start), timeZone },
+    end: { dateTime: localWallTime(new Date(input.end)), timeZone },
+    recurrence: graphRecurrence(start, repeat, timeZone)
+  }
 }
 
 /** Outlook calendar for one account through Microsoft Graph. */
@@ -46,14 +61,14 @@ export class OutlookCalendar implements CalendarProvider {
 
   /**
    * Adds the meeting to the default calendar in UTC, so the instant never depends on matching a
-   * Windows time zone name; Outlook shows it in the user's own zone. Graph answers 403
+   * Windows time zone name; Outlook shows it in the user's own zone. A weekly series goes in local
+   * time instead (see localSeries). Graph answers 403
    * ErrorAccessDenied to a token without Calendars.ReadWrite.
    */
   async createEvent(input: NewMeeting): Promise<Meeting> {
     const body = {
       subject: input.title,
-      start: utcDateTime(input.start),
-      end: utcDateTime(input.end),
+      ...(input.repeat ? localSeries(input, input.repeat) : { start: utcDateTime(input.start), end: utcDateTime(input.end) }),
       ...(input.location ? { location: { displayName: input.location } } : {})
     }
     let created: GraphEventLike | undefined

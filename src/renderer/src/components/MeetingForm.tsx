@@ -1,11 +1,24 @@
 import { useState } from 'react'
-import type { Account } from '@shared/types'
+import { WEEKDAYS, type Account, type Weekday } from '@shared/types'
 import { ReconnectNotice } from './ReconnectNotice'
-import { defaultTimes, shiftEnd, toIso } from './meetingTimes'
+import { addDays, defaultTimes, shiftEnd, toIso, weekdayOf } from './meetingTimes'
 
 /** The app checks these again; the inputs only keep typing within them. */
 const MAX_TITLE = 200
 const MAX_LOCATION = 200
+
+/** A new series runs eight weeks unless the user picks another end date. */
+const DEFAULT_REPEAT_DAYS = 7 * 8
+
+const DAY_NAMES: Record<Weekday, { short: string; long: string }> = {
+  MO: { short: 'L', long: 'lunes' },
+  TU: { short: 'M', long: 'martes' },
+  WE: { short: 'X', long: 'miércoles' },
+  TH: { short: 'J', long: 'jueves' },
+  FR: { short: 'V', long: 'viernes' },
+  SA: { short: 'S', long: 'sábado' },
+  SU: { short: 'D', long: 'domingo' }
+}
 
 interface MeetingFormProps {
   /** Connected accounts; the first one is preselected. Never empty. */
@@ -24,10 +37,26 @@ export function MeetingForm({ accounts, onCancel, onCreated }: MeetingFormProps)
   const [start, setStart] = useState(initial.start)
   const [end, setEnd] = useState(initial.end)
   const [location, setLocation] = useState('')
+  const [repeating, setRepeating] = useState(false)
+  const [days, setDays] = useState<Weekday[]>([])
+  const [until, setUntil] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const account = accounts.find((a) => a.id === accountId)
+
+  /** Turning repetition on starts with the chosen date's weekday and an eight-week end. */
+  function toggleRepeat(on: boolean): void {
+    setRepeating(on)
+    if (!on) return
+    const day = weekdayOf(date)
+    if (days.length === 0 && day) setDays([day])
+    if (!until) setUntil(addDays(date, DEFAULT_REPEAT_DAYS))
+  }
+
+  function toggleDay(day: Weekday, on: boolean): void {
+    setDays((current) => (on ? [...current, day] : current.filter((d) => d !== day)))
+  }
 
   async function submit(): Promise<void> {
     setBusy(true)
@@ -36,7 +65,8 @@ export function MeetingForm({ accounts, onCancel, onCreated }: MeetingFormProps)
       title,
       start: toIso(date, start),
       end: toIso(date, end),
-      ...(location.trim() ? { location } : {})
+      ...(location.trim() ? { location } : {}),
+      ...(repeating ? { repeat: { days, until } } : {})
     })
     setBusy(false)
     if (result.ok) onCreated()
@@ -88,6 +118,35 @@ export function MeetingForm({ accounts, onCancel, onCreated }: MeetingFormProps)
           <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
         </label>
       </div>
+      <label className="meeting-form__repeat">
+        <input type="checkbox" checked={repeating} onChange={(e) => toggleRepeat(e.target.checked)} />
+        Repetir cada semana
+      </label>
+      {repeating && (
+        <fieldset className="meeting-form__series">
+          <legend>Los días</legend>
+          <div className="meeting-form__days">
+            {WEEKDAYS.map((day) => (
+              <label key={day} className="day-toggle" title={DAY_NAMES[day].long}>
+                <input
+                  type="checkbox"
+                  checked={days.includes(day)}
+                  aria-label={DAY_NAMES[day].long}
+                  onChange={(e) => toggleDay(day, e.target.checked)}
+                />
+                <span aria-hidden="true">{DAY_NAMES[day].short}</span>
+              </label>
+            ))}
+          </div>
+          <label>
+            Hasta
+            <input type="date" value={until} min={date} onChange={(e) => setUntil(e.target.value)} />
+          </label>
+          <p className="meeting-form__hint">
+            Si la fecha no cae en uno de estos días, la primera reunión será el siguiente día elegido.
+          </p>
+        </fieldset>
+      )}
       <label>
         Ubicación
         <input value={location} maxLength={MAX_LOCATION} onChange={(e) => setLocation(e.target.value)} placeholder="Opcional" />
@@ -102,8 +161,8 @@ export function MeetingForm({ accounts, onCancel, onCreated }: MeetingFormProps)
         <button type="button" className="btn btn--ghost" onClick={onCancel} disabled={busy}>
           Cancelar
         </button>
-        <button type="submit" className="btn btn--primary" disabled={busy || !accountId}>
-          {busy ? 'Agregando…' : 'Agregar'}
+        <button type="submit" className="btn btn--primary" disabled={busy || !accountId || (repeating && days.length === 0)}>
+          {busy ? 'Agregando…' : repeating ? 'Agregar serie' : 'Agregar'}
         </button>
       </div>
     </form>

@@ -199,6 +199,19 @@ export interface NewMeeting {
   start: string
   end: string
   location?: string
+  /** Makes it a weekly series. Without it the meeting happens once. */
+  repeat?: WeeklyRepeat
+}
+
+/** Days of the week in calendar (RFC 5545) codes, Monday first. */
+export const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const
+export type Weekday = (typeof WEEKDAYS)[number]
+
+/** A meeting that repeats every week on `days`, local time, until `until` inclusive. */
+export interface WeeklyRepeat {
+  days: Weekday[]
+  /** Local date `YYYY-MM-DD` of the last day the series may fall on. */
+  until: string
 }
 
 export interface ReminderAlert {
