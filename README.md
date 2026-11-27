@@ -444,8 +444,18 @@ npm run typecheck
 ```
 
 ```powershell
+npm run lint
+```
+
+```powershell
+npm run format:check
+```
+
+```powershell
 npm run dist
 ```
+
+`npm run format` formats the code with Prettier. ESLint runs from `tools/eslint`, which `npm install` sets up, on TypeScript 6 until typescript-eslint supports TypeScript 7. GitHub Actions runs the type check, tests, build, lint and format check on every pull request and push to `main`.
 
 `npm run dist` builds a Windows installer in `dist/`. The app and installer icon is `resources/icon-oscuro.ico`. The tray icon and Narsil's notification faces are PNGs in `resources/`, which electron-builder copies next to the app as `resources/icons` (`extraResources`); unpackaged, Narsil reads them from the repository's `resources/` folder.
 
@@ -481,6 +491,7 @@ src/
 resources/                 App, tray and notification icons (copied next to the packaged app)
 supabase/                  Shared-list migrations and their policy tests
 tests/                     Vitest unit tests for the domain layer, providers and service
+tools/eslint/              ESLint and its config, installed apart so it runs on TypeScript 6
 ```
 
 ## License
