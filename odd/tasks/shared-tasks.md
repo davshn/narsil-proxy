@@ -37,7 +37,22 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
 - [x] F3 [S5] Sync adapter: polling every 10 seconds, local cache, notification on assignment. Route: inline. Branch: `feat/shared-sync`. Risk: none. Evidence: L24-L25.
 - [x] F4 [S6] Interface. Route: inline. Branch: `feat/shared-ui`. Risk: none. Evidence: L26.
 - [x] F5 [S7] MCP tools. Route: inline. Branch: `feat/shared-mcp`. Risk: none. Evidence: L29.
-- [ ] F6 [S8] Docs and a two-account end-to-end test. Route: inline.
+- [ ] F6 [S8] Docs and a two-account end-to-end test. Route: inline. Branch: `docs/shared-lists`. Docs done (L30); the test below waits for a second Google account.
+
+## Two-account test (F6)
+
+A is the owner, B the second account; each runs Narsil on their own computer or Windows user. Wait up to 10 seconds after each step.
+
+1. A creates the list "Prueba F6" and invites B's email. B is shown as "invitación pendiente".
+2. B signs in. B gets the notification "A te invitó a una lista" and sees the invitation with A's name, and no tasks or members.
+3. B accepts. A sees B as a member, by name.
+4. A adds a task assigned to B. B gets "A te asignó una tarea", and B's Pendientes count goes up by one.
+5. B sets it to "En curso". A sees "Último cambio: B, hoy a las …".
+6. On that task B sees **Editar** but not **Eliminar**: only the creator and the owner delete.
+7. B adds a task assigned to A. A gets the notification.
+8. From Claude on A's computer: "asigna a <B's first name> una tarea en Prueba F6". The task shows up for B.
+9. A removes B. B loses the list, and the task assigned to B is gone. The task B created for A stays.
+10. A deletes the list.
 
 ## Log
 
@@ -136,3 +151,4 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - The deleting tools are marked destructive and say "Confirm with the user first."
   - The tool argument parser moved to `protocol.ts` (`parseToolArgs`) so both handler modules share it.
   - Live check through the real bridge against the real project: the bridge listed 27 tools; then Claude's calls created "Prueba MCP", refused an unknown assignee, added a task assigned by email, set it in progress, and deleted the task and the list. The project was left with 0 lists.
+- L30 (2026-11-27) F6 docs: the README section is no longer "in progress" and gains "Adding another person", with the owner's steps (test user, URL and public key, invitation) and the other person's (install, project, sign-in, accept). Checked first: only the mail tab needs mail accounts and a Claude key, so a person who only uses shared lists needs neither.
