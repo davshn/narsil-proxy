@@ -207,7 +207,7 @@ Shared lists let Narsil users give each other tasks. They live in a [Supabase](h
    - While the consent screen is in testing, add every person who will use shared lists under **Google Auth Platform → Audience → Test users**.
 3. In Supabase, open **Authentication → Sign In / Providers → Google**. Turn it on, then paste that client's ID and secret.
 4. In Supabase, open **Authentication → URL Configuration → Redirect URLs** and add exactly `http://127.0.0.1:47813/auth/callback`.
-5. In Supabase, open **Authentication → Sign In / Providers → Email** and turn it off. Shared lists only use Google.
+5. In Supabase, open **Authentication → Sign In / Providers → Email**. Turn off sign-ups with email, because shared lists only use Google, but keep **Confirm email** and **Secure email change** on: membership is checked against the confirmed email.
 6. Create the tables and their rules from `supabase/migrations/`. Use one of these:
    - **SQL Editor:** paste each file, in order, into the Supabase **SQL Editor** and run it.
    - **CLI:** run `npx supabase link --project-ref <project>`, then `npx supabase db push`. It asks for your database password.

@@ -82,7 +82,7 @@ select is(
   0, 'a member who is neither the assignee nor the creator cannot change a task');
 select throws_ok(
   $$update public.shared_tasks set created_by = '22222222-2222-2222-2222-222222222222' where id = 'bbbbbbbb-0000-0000-0000-000000000001'$$,
-  'P0001', 'El creador y la lista de una tarea no cambian.', 'the creator of a task never changes');
+  'P0001', 'Una tarea no cambia de id, creador ni lista.', 'the creator of a task never changes');
 select throws_ok(
   $$update public.shared_tasks set status = 'lista' where id = 'bbbbbbbb-0000-0000-0000-000000000001'$$,
   '23514', null, 'the status is one of the five Pendientes statuses');
@@ -152,6 +152,13 @@ select is_empty($$select 1 from public.shared_tasks where assignee_email = 'carl
   'removing a member deletes the tasks assigned to her');
 select results_eq($$select name from public.shared_tasks where id = 'bbbbbbbb-0000-0000-0000-000000000004'$$,
   $$values ('Encargo de Carla para Beto')$$, 'tasks she created for others stay');
+
+-- A filter that reads no column skips the read policy; the delete policy must stand on its own.
+set local request.jwt.claims to '{"sub":"33333333-3333-3333-3333-333333333333","role":"authenticated"}';
+select is(pg_temp.affected($$delete from public.shared_tasks where true$$), 0,
+  'a removed member cannot delete the tasks she created in that list');
+
+set local request.jwt.claims to '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
 select lives_ok($$delete from public.shared_tasks where id = 'bbbbbbbb-0000-0000-0000-000000000004'$$,
   'the owner deletes any task of her list');
 
@@ -166,6 +173,37 @@ select is_empty($$select 1 from public.list_members where list_id = 'aaaaaaaa-00
   'deleting a list deletes its members');
 select is_empty($$select 1 from public.shared_tasks where list_id = 'aaaaaaaa-0000-0000-0000-000000000001'$$,
   'deleting a list deletes its tasks');
+
+-- ---------- Who changed a task, and when, cannot be made up ----------
+set local role authenticated;
+set local request.jwt.claims to '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}';
+insert into public.lists (id, name, owner_id) values ('aaaaaaaa-0000-0000-0000-000000000002', 'Lista de Beto', '22222222-2222-2222-2222-222222222222');
+insert into public.shared_tasks (id, list_id, name, updated_by, created_at, updated_at) values
+  ('bbbbbbbb-0000-0000-0000-000000000009', 'aaaaaaaa-0000-0000-0000-000000000002', 'Falsa', '11111111-1111-1111-1111-111111111111', '2000-01-01', '2000-01-01');
+select is((select updated_by from public.shared_tasks where id = 'bbbbbbbb-0000-0000-0000-000000000009'),
+  '22222222-2222-2222-2222-222222222222'::uuid, 'a new task records its real author as the last to change it');
+select ok((select created_at > '2020-01-01' and updated_at > '2020-01-01' from public.shared_tasks where id = 'bbbbbbbb-0000-0000-0000-000000000009'),
+  'a new task gets the real time, not the one sent');
+select throws_ok($$update public.shared_tasks set id = gen_random_uuid() where id = 'bbbbbbbb-0000-0000-0000-000000000009'$$,
+  'P0001', 'Una tarea no cambia de id, creador ni lista.', 'a task keeps its id');
+
+-- ---------- A changed email moves the profile with it ----------
+reset role;
+update auth.users set email = 'Beto.Nuevo@example.com' where id = '22222222-2222-2222-2222-222222222222';
+select is((select email from public.profiles where id = '22222222-2222-2222-2222-222222222222'), 'beto.nuevo@example.com',
+  'the profile email follows the account email');
+
+-- ---------- Only signed-in users reach the helpers; no extra table rights ----------
+select ok(not has_function_privilege('anon', 'public.current_email()', 'execute')
+  and not has_function_privilege('anon', 'public.is_member(uuid)', 'execute')
+  and not has_function_privilege('anon', 'public.is_owner(uuid)', 'execute')
+  and not has_function_privilege('anon', 'public.shares_list_with(text)', 'execute'),
+  'the anonymous role cannot run the membership helpers');
+select ok(not has_table_privilege('authenticated', 'public.lists', 'TRUNCATE')
+  and not has_table_privilege('authenticated', 'public.list_members', 'TRUNCATE')
+  and not has_table_privilege('authenticated', 'public.shared_tasks', 'TRUNCATE')
+  and not has_table_privilege('authenticated', 'public.profiles', 'TRUNCATE'),
+  'signed-in users cannot truncate, which skips row level security');
 
 select * from finish();
 rollback;

@@ -12,7 +12,10 @@ create table public.profiles (
 );
 
 -- A profile exists only for a confirmed email, so an unconfirmed sign-up cannot pose as an
--- invited person or show a made-up name to a list.
+-- invited person or show a made-up name to a list. When the account email changes, the profile
+-- follows it, so the profile always names the email that membership is checked against.
+-- Membership relies on Supabase Auth confirming every new email: keep "Confirm email" and
+-- "Secure email change" on.
 create function public.sync_profile() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
@@ -25,14 +28,14 @@ begin
     lower(new.email),
     left(coalesce(new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'name', ''), 200)
   )
-  on conflict (id) do nothing;
+  on conflict (id) do update set email = excluded.email;
   return new;
 end;
 $$;
 
 create trigger profile_on_signup after insert on auth.users
   for each row execute function public.sync_profile();
-create trigger profile_on_confirm after update of email_confirmed_at on auth.users
+create trigger profile_on_confirm after update of email_confirmed_at, email on auth.users
   for each row execute function public.sync_profile();
 
 -- ---------- Lists, members and tasks ----------
@@ -142,11 +145,17 @@ $$;
 create trigger owner_stays_member before delete on public.list_members
   for each row execute function public.keep_owner_member();
 
+-- Who changed a task last, and when, always comes from the session and the clock, never from
+-- the values sent. A task keeps its id, creator and list for life.
 create function public.stamp_task_change() returns trigger
 language plpgsql set search_path = '' as $$
 begin
-  if new.list_id <> old.list_id or new.created_by <> old.created_by or new.created_at <> old.created_at then
-    raise exception 'El creador y la lista de una tarea no cambian.';
+  if tg_op = 'UPDATE' then
+    if new.id <> old.id or new.list_id <> old.list_id or new.created_by <> old.created_by or new.created_at <> old.created_at then
+      raise exception 'Una tarea no cambia de id, creador ni lista.';
+    end if;
+  else
+    new.created_at := now();
   end if;
   new.updated_by := auth.uid();
   new.updated_at := now();
@@ -154,7 +163,7 @@ begin
 end;
 $$;
 
-create trigger task_change_stamped before update on public.shared_tasks
+create trigger task_change_stamped before insert or update on public.shared_tasks
   for each row execute function public.stamp_task_change();
 
 -- ---------- Row level security ----------
@@ -164,9 +173,16 @@ alter table public.lists enable row level security;
 alter table public.list_members enable row level security;
 alter table public.shared_tasks enable row level security;
 
--- Nothing here is for signed-out callers.
+-- Nothing here is for signed-out callers. Postgres lets everyone run a new function, so the
+-- helpers are taken from public as well as anon and given back to signed-in users only.
 revoke all on public.profiles, public.lists, public.list_members, public.shared_tasks from anon;
-revoke execute on function public.current_email(), public.is_member(uuid), public.is_owner(uuid), public.shares_list_with(text) from anon;
+revoke execute on function public.current_email(), public.is_member(uuid), public.is_owner(uuid), public.shares_list_with(text)
+  from public, anon;
+grant execute on function public.current_email(), public.is_member(uuid), public.is_owner(uuid), public.shares_list_with(text)
+  to authenticated;
+-- Truncate skips row level security; trigger and references are never needed by the app.
+revoke truncate, trigger, references on public.profiles, public.lists, public.list_members, public.shared_tasks
+  from authenticated;
 -- A profile's email and id come from the sign-in; only the name is the user's to change.
 revoke insert, update, delete on public.profiles from authenticated;
 grant update (name) on public.profiles to authenticated;
@@ -201,5 +217,7 @@ create policy "the assignee and the creator change a task" on public.shared_task
   for update to authenticated
   using (public.is_member(list_id) and (created_by = (select auth.uid()) or assignee_email = (select public.current_email())))
   with check (public.is_member(list_id));
+-- Membership is checked here too: a filter that reads no column skips the select policy.
 create policy "the creator and the owner delete a task" on public.shared_tasks
-  for delete to authenticated using (created_by = (select auth.uid()) or public.is_owner(list_id));
+  for delete to authenticated
+  using (public.is_member(list_id) and (created_by = (select auth.uid()) or public.is_owner(list_id)));

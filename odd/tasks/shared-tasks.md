@@ -77,3 +77,18 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - The pgTAP suite `supabase/tests/shared_lists.test.sql` (43 tests) failed first (RED: no tables), then passed.
   - A mutation check weakened the task update policy, and exactly test 17 failed; a reset restored a full pass.
   - `supabase db advisors` gave 0 findings, after wrapping `auth.uid()` in `(select …)`.
+- L16 Adversarial verifier: S3 PASS, S4 PARTIAL, no blockers. 43 tests observed passing. Six minor defects:
+  - D1: a removed creator could still delete their tasks with `where true`, because the delete policy did not require membership.
+  - D2: on insert, `updated_by` and the timestamps could be spoofed, and an update could change a task's id.
+  - D3: the profile email did not follow a changed account email, while membership did.
+  - D4: anyone can confirm that an email has an account and auto-join that person to their list, with no way out.
+  - D5: `revoke execute … from anon` did nothing while `public` kept execute.
+  - D6: `authenticated` kept TRUNCATE, TRIGGER and REFERENCES.
+- L17 Fixed D1, D2, D3, D5 and D6 in the same migration, which has not reached the real project yet:
+  - The delete policy requires membership.
+  - The stamp trigger runs on insert too, and refuses an id change.
+  - `sync_profile` also runs on email updates, as an upsert.
+  - Execute on the helpers is revoked from public and granted to authenticated.
+  - Truncate, trigger and references are revoked.
+
+  Eight regression tests failed first; 50 pass now and the advisors report 0 findings. The README says to keep Confirm email and Secure email change on. D4 waits on the owner.
