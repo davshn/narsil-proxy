@@ -101,6 +101,7 @@ export function App(): React.JSX.Element {
       window.narsil.onInboxChanged(setInbox),
       window.narsil.onMeetingsChanged(setMeetings),
       window.narsil.onRulesChanged(setRules),
+      window.narsil.onTasksChanged(setTasks),
       window.narsil.onRuleActivityChanged(setActivity),
       window.narsil.onReminder((a) => {
         setAlert(a)

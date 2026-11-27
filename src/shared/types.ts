@@ -307,6 +307,8 @@ export interface NarsilApi {
   deleteTask(id: string): Promise<TasksResult>
   onServerRulesChanged(listener: (rules: AccountRules[]) => void): () => void
   onRulesChanged(listener: (rules: Rule[]) => void): () => void
+  /** Tasks changed outside the window, through the MCP bridge. */
+  onTasksChanged(listener: (tasks: PendingTask[]) => void): () => void
   onRuleActivityChanged(listener: (activity: RuleActivity[]) => void): () => void
   onInboxChanged(listener: (items: InboxItem[]) => void): () => void
   onMeetingsChanged(listener: (meetings: Meeting[]) => void): () => void
@@ -349,6 +351,7 @@ export const IPC = {
   deleteTask: 'narsil:delete-task',
   serverRulesChanged: 'narsil:server-rules-changed',
   rulesChanged: 'narsil:rules-changed',
+  tasksChanged: 'narsil:tasks-changed',
   ruleActivityChanged: 'narsil:rule-activity-changed',
   inboxChanged: 'narsil:inbox-changed',
   meetingsChanged: 'narsil:meetings-changed',
