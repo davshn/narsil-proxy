@@ -1,13 +1,24 @@
-import { join } from 'node:path'
+import { posix, win32 } from 'node:path'
 import { z } from 'zod'
 import { TASK_STATUSES, WEEKDAYS } from '../shared/types'
 
 /**
  * Where the running Narsil tells the MCP bridge how to reach it: a per-user folder, so only
- * this Windows user can read the token. Written on every start, removed on quit.
+ * this user can read the token. Written on every start, removed on quit.
  */
-export function mcpDiscoveryFile(env: NodeJS.ProcessEnv, homedir: string): string {
-  return join(env.LOCALAPPDATA ?? join(homedir, 'AppData', 'Local'), 'Narsil', 'mcp.json')
+export function mcpDiscoveryFile(env: NodeJS.ProcessEnv, homedir: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'win32') return win32.join(env.LOCALAPPDATA ?? win32.join(homedir, 'AppData', 'Local'), 'Narsil', 'mcp.json')
+  if (platform === 'darwin') return posix.join(homedir, 'Library', 'Application Support', 'Narsil', 'mcp.json')
+  return posix.join(env.XDG_STATE_HOME ?? posix.join(homedir, '.local', 'state'), 'narsil', 'mcp.json')
+}
+
+/**
+ * The local endpoint Narsil listens on: a named pipe on Windows, a Unix socket in `dir` (the
+ * discovery file's folder) elsewhere. macOS caps socket paths at 104 bytes, so the name is short.
+ */
+export function mcpEndpoint(platform: NodeJS.Platform, dir: string, id: string): string {
+  if (platform === 'win32') return `\\\\.\\pipe\\narsil-mcp-${id}`
+  return posix.join(dir, `mcp-${id.slice(0, 8)}.sock`)
 }
 
 export const McpDiscoverySchema = z.object({
