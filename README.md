@@ -198,7 +198,7 @@ Tasks are stored on this computer only, as plain JSON in `%APPDATA%\narsil-proxy
 
 ### Shared lists (in progress)
 
-Shared lists let Narsil users give each other tasks. They live in a [Supabase](https://supabase.com) project, apart from your personal Pendientes, which stay on this computer. So far Narsil only signs you in; the lists themselves come next.
+Shared lists let Narsil users give each other tasks. They live in a [Supabase](https://supabase.com) project, apart from your personal Pendientes, which stay on this computer. So far Narsil signs you in and the database holds the lists and their rules; the screens for them come next.
 
 **One-time setup (the project owner)**
 
@@ -207,6 +207,32 @@ Shared lists let Narsil users give each other tasks. They live in a [Supabase](h
    - While the consent screen is in testing, add every person who will use shared lists under **Google Auth Platform → Audience → Test users**.
 3. In Supabase, open **Authentication → Sign In / Providers → Google**. Turn it on, then paste that client's ID and secret.
 4. In Supabase, open **Authentication → URL Configuration → Redirect URLs** and add exactly `http://127.0.0.1:47813/auth/callback`.
+5. In Supabase, open **Authentication → Sign In / Providers → Email** and turn it off. Shared lists only use Google.
+6. Create the tables and their rules from `supabase/migrations/`. Use one of these:
+   - **SQL Editor:** paste each file, in order, into the Supabase **SQL Editor** and run it.
+   - **CLI:** run `npx supabase link --project-ref <project>`, then `npx supabase db push`. It asks for your database password.
+
+**How the data is protected**
+
+Every permission is a row level security policy in `supabase/migrations/`, so it holds whatever app or tool calls the database:
+
+- Membership is by **confirmed** email. An invitation opens a list as soon as that person signs in with that email.
+- Only members see a list, its members, its tasks and each other's names.
+- Any member creates tasks and assigns them, to members only.
+- The assignee and the creator change a task: its status, name, description and assignee.
+- A list has exactly one owner. Only the owner invites, removes members, renames or deletes the list, and the owner cannot leave it.
+- Removing a member deletes the tasks assigned to them. Tasks they created for others stay.
+- The creator or the list owner deletes a task.
+
+The policies are tested in `supabase/tests/` against a local Supabase in Docker:
+
+```powershell
+npx supabase db start
+```
+
+```powershell
+npx supabase test db
+```
 
 **Signing in (everyone)**
 

@@ -14,7 +14,7 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - The assignee and the creator change a task's status.
   - Decision (2026-11-27): "sí, el responsable puede editar nombre y descripción".
   - Decision (2026-11-27): "Cada lista solo puede tener un dueño." Only the owner invites and removes members.
-  - Decision (2026-11-27): "las tareas después de que alguien es expulsado son eliminadas". Assumption to confirm at F2: this means the tasks assigned to the removed member.
+  - Decision (2026-11-27): "las tareas después de que alguien es expulsado son eliminadas". Confirmed at F2: the tasks assigned to the removed member ("Las asignadas a esa persona"); tasks they created for others stay.
 - S5: Narsil syncs in real time and keeps a local copy to read while offline. Editing needs a connection. A desktop notification shows when someone assigns you a task.
 - S6: Pendientes gets a **Mías / Compartidas** switch. Compartidas shows:
   - list creation and invitations;
@@ -67,3 +67,13 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - `setConfig` calls `stopAutoRefresh()` on the old client.
 
   Regression tests failed first, then passed.
+- L13 (2026-11-27) F1 was merged (davshn/narsil-proxy#7). User: "Continúa". On removing a member, the user chose "Las asignadas a esa persona (Recommended)".
+- L14 F2 design:
+  - Membership is by confirmed email. A profile is created only once the email is confirmed, so an unconfirmed sign-up can neither open an invitation nor show a made-up name.
+  - `lists.owner_id` is a single column, so a list has one owner.
+  - A composite foreign key `(list_id, assignee_email) → list_members` with `on delete cascade` makes "assign only to members" and "removing a member deletes their assigned tasks" structural.
+  - Triggers keep the owner a member, keep a task's creator and list fixed, and stamp `updated_by` and `updated_at`.
+- L15 Evidence:
+  - The pgTAP suite `supabase/tests/shared_lists.test.sql` (43 tests) failed first (RED: no tables), then passed.
+  - A mutation check weakened the task update policy, and exactly test 17 failed; a reset restored a full pass.
+  - `supabase db advisors` gave 0 findings, after wrapping `auth.uid()` in `(select …)`.
