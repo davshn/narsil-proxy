@@ -198,7 +198,7 @@ Tasks are stored on this computer only, as plain JSON in `%APPDATA%\narsil-proxy
 
 ### Shared lists (in progress)
 
-Shared lists let Narsil users give each other tasks. They live in a [Supabase](https://supabase.com) project, apart from your personal Pendientes, which stay on this computer. So far Narsil signs you in, the database holds the lists and their rules, and Narsil keeps a synced copy; the screens for them come next.
+Shared lists let Narsil users give each other tasks. They live in a [Supabase](https://supabase.com) project, apart from your personal Pendientes, which stay on this computer. They show in **Pendientes → Compartidas**. Claude access through MCP comes next.
 
 **One-time setup (the project owner)**
 
@@ -250,9 +250,19 @@ The session is encrypted under `secrets/shared-session.bin` and survives restart
 
 While you are signed in, Narsil reads your shared lists every 10 seconds. It also reads them right after you sign in and when you bring its window back. It polls instead of using Supabase Realtime, which needs no extra database setup and never sends you events about rows you cannot see.
 
-The last copy is kept in `shared-cache.json`, so the lists still show while you are offline. Signing out deletes it. When someone else assigns you a task, or reassigns one to you, Windows shows "*Name* te asignó una tarea" with the task and its list. Several at once arrive as one notification, "N tareas nuevas para ti".
+The last copy is kept in `shared-cache.json`, so the lists still show while you are offline. Signing out deletes it. When someone else assigns you a task, or reassigns one to you, Windows shows "*Name* te asignó una tarea" with the task and its list. Several at once arrive as one notification, "N tareas nuevas para ti". An invitation to a list also shows one, "*Name* te invitó a una lista". No email is sent: tell the person, and they see the invitation in Compartidas once they sign in with that Google email.
 
 If you signed in before the tables existed, apply every migration, including `…_backfill_profiles.sql`: it creates the profile that account is missing.
+
+**Using shared lists**
+
+**Pendientes** has two views, **Mías** (your own tasks) and **Compartidas**. The tab count adds the unfinished shared tasks assigned to you.
+
+- **Nueva lista** creates a list you own. Open its members line to invite people by their Google email, remove them, rename the list or delete it.
+- An invitation shows at the top of Compartidas, with **Aceptar** and **Rechazar**. Members other than the owner can **Salir de la lista**.
+- **Agregar tarea** adds a task, and **Para** assigns it to a member who accepted. Each task shows who it is for and who changed it last, and when.
+- The status label and **Editar** appear for the creator and the assignee; **Eliminar** appears for the creator and the list owner. The database enforces the same rules.
+- Changes need a connection. Offline, Compartidas shows the last copy, with a note saying the sync failed.
 
 ### Inbox settings
 

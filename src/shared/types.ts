@@ -298,6 +298,36 @@ export interface SharedSnapshot {
   syncedAt: string
 }
 
+/** A shared task to add (no `id`) or edit. A task never moves to another list. */
+export interface SharedTaskInput {
+  id?: string
+  listId: string
+  name: string
+  /** May be empty. */
+  description: string
+  /** Null leaves it unassigned. */
+  assigneeEmail: string | null
+}
+
+/** One change to the shared lists, as the screens and Claude ask for it. */
+export type SharedAction =
+  | { type: 'createList'; name: string }
+  | { type: 'renameList'; listId: string; name: string }
+  | { type: 'deleteList'; listId: string }
+  | { type: 'invite'; listId: string; email: string }
+  | { type: 'acceptInvitation'; listId: string }
+  /** Also declines an invitation. */
+  | { type: 'leave'; listId: string }
+  | { type: 'removeMember'; listId: string; email: string }
+  | { type: 'saveTask'; task: SharedTaskInput }
+  | { type: 'setTaskStatus'; taskId: string; status: TaskStatus }
+  | { type: 'deleteTask'; taskId: string }
+
+/** The shared lists after a change, also when it failed. */
+export interface SharedActionResult extends ActionResult {
+  state: SharedState
+}
+
 /** The shared lists as Narsil last read them; `error` says why the latest sync failed. */
 export interface SharedState {
   signedIn: boolean
@@ -399,6 +429,8 @@ export interface NarsilApi {
   /** Syncs now instead of waiting for the next poll. */
   refreshShared(): Promise<SharedState>
   onSharedChanged(listener: (state: SharedState) => void): () => void
+  /** Writes one change with the signed-in session, then syncs. */
+  sharedAction(action: SharedAction): Promise<SharedActionResult>
   onServerRulesChanged(listener: (rules: AccountRules[]) => void): () => void
   onRulesChanged(listener: (rules: Rule[]) => void): () => void
   /** Tasks changed outside the window, through the MCP bridge. */
@@ -410,6 +442,8 @@ export interface NarsilApi {
   onStatusChanged(listener: (status: AppStatus) => void): () => void
   /** A new-mail notification was clicked: show that email, or just the mail list (null) for a group. */
   onFocusEmail(listener: (key: string | null) => void): () => void
+  /** A shared-task notification was clicked: show the shared lists. */
+  onFocusShared(listener: () => void): () => void
 }
 
 export const IPC = {
@@ -450,6 +484,7 @@ export const IPC = {
   getSharedState: 'narsil:get-shared-state',
   refreshShared: 'narsil:refresh-shared',
   sharedChanged: 'narsil:shared-changed',
+  sharedAction: 'narsil:shared-action',
   serverRulesChanged: 'narsil:server-rules-changed',
   rulesChanged: 'narsil:rules-changed',
   tasksChanged: 'narsil:tasks-changed',
@@ -458,5 +493,6 @@ export const IPC = {
   meetingsChanged: 'narsil:meetings-changed',
   reminder: 'narsil:reminder',
   statusChanged: 'narsil:status-changed',
-  focusEmail: 'narsil:focus-email'
+  focusEmail: 'narsil:focus-email',
+  focusShared: 'narsil:focus-shared'
 } as const

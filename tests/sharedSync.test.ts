@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SharedSnapshot, SharedState } from '@shared/types'
 import type { SharedSession, SharedTable } from '../src/main/app/sharedAuth'
-import { SHARED_POLL_MS, SharedSync, type SharedAssignment, type SharedCacheRepository } from '../src/main/app/sharedSync'
+import { SHARED_POLL_MS, SharedSync, type SharedAssignment, type SharedCacheRepository, type SharedInvitation } from '../src/main/app/sharedSync'
 
 const ANA = { id: 'u-ana', email: 'ana@gmail.com', name: 'Ana Pérez' }
 const LUIS = { id: 'u-luis', email: 'luis@gmail.com', name: 'Luis Gómez' }
@@ -73,6 +73,7 @@ function setup(options: { cache?: MemoryCache; rows?: Rows } = {}) {
   const cache = options.cache ?? new MemoryCache()
   const states: SharedState[] = []
   const assigned: SharedAssignment[][] = []
+  const invited: SharedInvitation[][] = []
   const sync = new SharedSync({
     source: {
       session: async (): Promise<SharedSession | null> => {
@@ -82,16 +83,18 @@ function setup(options: { cache?: MemoryCache; rows?: Rows } = {}) {
         return {
           ...fake.user,
           select: async (table) =>
-            fake.failure ? { data: null, error: { message: fake.failure } } : { data: structuredClone(fake.rows[table]), error: null }
+            fake.failure ? { data: null, error: { message: fake.failure } } : { data: structuredClone(fake.rows[table]), error: null },
+          write: async () => ({ error: null, count: 1 })
         }
       }
     },
     cache,
     changed: (state) => states.push(state),
     assigned: (items) => assigned.push(items),
+    invited: (items) => invited.push(items),
     now: () => new Date('2026-11-27T12:00:00Z')
   })
-  return { fake, cache, states, assigned, sync }
+  return { fake, cache, states, assigned, invited, sync }
 }
 
 afterEach(() => {
@@ -264,6 +267,47 @@ describe('SharedSync assignments', () => {
     fake.rows.shared_tasks.push(task('t-2', { assignee_email: LUIS.email, created_by: ANA.id, updated_by: ANA.id }))
     await sync.refresh()
     expect(assigned).toEqual([])
+  })
+})
+
+describe('SharedSync invitations', () => {
+  const MARTA = { id: 'u-marta', email: 'marta@gmail.com', name: 'Marta Ruiz' }
+
+  /** Ana's rows before Marta invited her to "Club". */
+  function withoutClub(): Rows {
+    const rows = anaRows()
+    rows.lists = rows.lists.filter((l) => l.id !== 'l-club')
+    rows.list_members = rows.list_members.filter((m) => m.list_id !== 'l-club')
+    return rows
+  }
+
+  it('reports an invitation that arrived since the last sync, with who sent it', async () => {
+    const { fake, sync, invited } = setup({ rows: withoutClub() })
+    await sync.refresh()
+    fake.rows = anaRows()
+    fake.rows.profiles.push(MARTA)
+    await sync.refresh()
+    expect(invited).toEqual([[{ list: expect.objectContaining({ id: 'l-club', name: 'Club', accepted: false }), by: MARTA }]])
+  })
+
+  it('reports nothing on the first sync, for an invitation already reported, or once it is accepted', async () => {
+    const { fake, sync, invited } = setup()
+    await sync.refresh()
+    await sync.refresh()
+    fake.rows.list_members = fake.rows.list_members.map((m) =>
+      m.list_id === 'l-club' ? { ...m, accepted_at: '2026-11-27T11:00:00+00:00' } : m
+    )
+    await sync.refresh()
+    expect(invited).toEqual([])
+  })
+
+  it('does not compare with a stored copy of another user', async () => {
+    const cache = new MemoryCache()
+    await setup({ cache, rows: withoutClub() }).sync.refresh()
+    const { fake, sync, invited } = setup({ cache })
+    fake.user = { id: LUIS.id, email: LUIS.email }
+    await sync.refresh()
+    expect(invited).toEqual([])
   })
 })
 

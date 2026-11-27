@@ -57,6 +57,7 @@ function fakeClient(storage: SessionStorage, overrides: Partial<AuthClient> = {}
     }),
     stopAutoRefresh: vi.fn(async () => undefined),
     select: vi.fn(async (table: string) => ({ data: [{ table }], error: null })),
+    write: vi.fn(async () => ({ error: null, count: 1 })),
     ...overrides
   }
   return client
@@ -228,6 +229,9 @@ describe('SharedAuth', () => {
     expect(session).toMatchObject({ id: 'u-ana', email: 'ana@gmail.com' })
     expect(await session?.select('lists', 'id')).toEqual({ data: [{ table: 'lists' }], error: null })
     expect(client()?.select).toHaveBeenCalledWith('lists', 'id')
+    const write = { kind: 'delete', table: 'lists', match: { id: 'l-1' } } as const
+    expect(await session?.write(write)).toEqual({ error: null, count: 1 })
+    expect(client()?.write).toHaveBeenCalledWith(write)
   })
 
   it('has no session before a project is saved or after signing out', async () => {

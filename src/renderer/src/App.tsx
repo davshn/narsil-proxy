@@ -9,6 +9,8 @@ import type {
   Rule,
   RuleActivity,
   ServerRuleInput,
+  SharedActionResult,
+  SharedState,
   TasksResult
 } from '@shared/types'
 import { serverRuleDraftFromEmail } from '@shared/rules'
@@ -18,6 +20,8 @@ import { Meetings } from './components/Meetings'
 import { Setup } from './components/Setup'
 import { Rules } from './components/Rules'
 import { Tasks } from './components/Tasks'
+import { SharedTasks } from './components/SharedTasks'
+import { assignedToMe } from './components/sharedView'
 import { useDayNightTheme } from './theme'
 
 type Tab = 'mail' | 'meetings' | 'tasks' | 'rules' | 'setup'
@@ -57,7 +61,11 @@ export function App(): React.JSX.Element {
     setTasks(result.tasks)
     if (result.ok) setTasksError(null)
   }, [])
-  const pendingTasks = tasks.filter((t) => t.status !== 'done').length
+  const [shared, setShared] = useState<SharedState>({ signedIn: false, snapshot: null })
+  const takeShared = useCallback((result: SharedActionResult) => setShared(result.state), [])
+  /** Pendientes shows the user's own tasks or the shared lists. */
+  const [scope, setScope] = useState<'mine' | 'shared'>('mine')
+  const pendingTasks = tasks.filter((t) => t.status !== 'done').length + assignedToMe(shared.snapshot)
 
   /** Shows the "done" pose for a few seconds; a new success restarts the clock. */
   const celebrate = useCallback(() => {
@@ -92,6 +100,7 @@ export function App(): React.JSX.Element {
       setTasksError(result.ok ? null : (result.error ?? null))
     })
     void window.narsil.getMeetings().then(setMeetings)
+    void window.narsil.getSharedState().then(setShared)
     void window.narsil.getRules().then(setRules)
     void window.narsil.getRuleActivity().then(setActivity)
     void window.narsil.getServerRules().then(setServerRules)
@@ -102,6 +111,12 @@ export function App(): React.JSX.Element {
       window.narsil.onMeetingsChanged(setMeetings),
       window.narsil.onRulesChanged(setRules),
       window.narsil.onTasksChanged(setTasks),
+      window.narsil.onSharedChanged(setShared),
+      window.narsil.onFocusShared(() => {
+        setExpanded(true)
+        setTab('tasks')
+        setScope('shared')
+      }),
       window.narsil.onRuleActivityChanged(setActivity),
       window.narsil.onReminder((a) => {
         setAlert(a)
@@ -248,8 +263,22 @@ export function App(): React.JSX.Element {
         )}
         {tab === 'tasks' && (
           <>
-            {tasksError && <p className="panel__error">{tasksError}</p>}
-            <Tasks tasks={tasks} onResult={takeTasks} />
+            <div className="scope" role="group" aria-label="Qué pendientes ver">
+              <button type="button" className="tab" aria-pressed={scope === 'mine'} onClick={() => setScope('mine')}>
+                Mías
+              </button>
+              <button type="button" className="tab" aria-pressed={scope === 'shared'} onClick={() => setScope('shared')}>
+                Compartidas{assignedToMe(shared.snapshot) > 0 ? ` ${assignedToMe(shared.snapshot)}` : ''}
+              </button>
+            </div>
+            {scope === 'mine' ? (
+              <>
+                {tasksError && <p className="panel__error">{tasksError}</p>}
+                <Tasks tasks={tasks} onResult={takeTasks} />
+              </>
+            ) : (
+              <SharedTasks state={shared} onResult={takeShared} onOpenSetup={() => setTab('setup')} />
+            )}
           </>
         )}
         {tab === 'rules' && (

@@ -15,6 +15,7 @@ import {
   type FoldersResult,
   type InboxItem,
   type PendingTask,
+  type SharedActionResult,
   type SharedResult,
   type SharedStatus,
   type TasksResult
@@ -29,7 +30,8 @@ import { SharedCacheFileStore } from './adapters/sharedCacheStore'
 import { SharedConfigFileStore } from './adapters/sharedConfigStore'
 import { makeSupabaseAuth } from './adapters/supabaseClient'
 import { SharedAuth } from './app/sharedAuth'
-import { SharedSync, type SharedAssignment } from './app/sharedSync'
+import { SharedSync, type SharedAssignment, type SharedInvitation } from './app/sharedSync'
+import { SharedActionSchema, SharedLists } from './app/sharedLists'
 import { createMcpHandlers } from './app/mcpTools'
 import { mcpDiscoveryFile } from '../mcp/protocol'
 import { MAX_TASK_DESCRIPTION, MAX_TASK_NAME, MAX_TASK_PROJECT, TaskList } from './app/tasks'
@@ -225,19 +227,31 @@ function notifyNewEmails(items: InboxItem[], accounts: Account[]): void {
 function notifyAssignments(items: SharedAssignment[]): void {
   const [first] = items
   if (!first) return
-  let title: string
-  let body: string
   if (items.length === 1) {
     // Plain concatenation: names come from other people and never go through markup.
-    title = truncate((first.by?.name || first.by?.email || 'Alguien') + ' te asignó una tarea', MAX_TITLE)
-    body = first.task.name + (first.list ? '\n' + first.list.name : '')
+    const title = truncate((first.by?.name || first.by?.email || 'Alguien') + ' te asignó una tarea', MAX_TITLE)
+    notifyShared(title, first.task.name + (first.list ? '\n' + first.list.name : ''))
   } else {
-    title = `${items.length} tareas nuevas para ti`
-    body = items
-      .slice(0, MAX_GROUP_SUBJECTS)
-      .map((item) => item.task.name)
-      .join('\n')
+    const names = items.slice(0, MAX_GROUP_SUBJECTS).map((item) => item.task.name)
+    notifyShared(`${items.length} tareas nuevas para ti`, names.join('\n'))
   }
+}
+
+/** One notification per sync for invitations; accepting happens in Compartidas. */
+function notifyInvitations(items: SharedInvitation[]): void {
+  const [first] = items
+  if (!first) return
+  if (items.length === 1) {
+    const title = truncate((first.by?.name || first.by?.email || 'Alguien') + ' te invitó a una lista', MAX_TITLE)
+    notifyShared(title, first.list.name + '\nAcéptala en Pendientes, Compartidas.')
+  } else {
+    const names = items.slice(0, MAX_GROUP_SUBJECTS).map((item) => item.list.name)
+    notifyShared(`${items.length} invitaciones a listas`, names.join('\n'))
+  }
+}
+
+/** A shared-lists notification; clicking it opens Compartidas. */
+function notifyShared(title: string, body: string): void {
   const notification = new Notification({ title, body, icon: notificationIcon() })
   liveNotifications.add(notification)
   const release = (): void => void liveNotifications.delete(notification)
@@ -247,6 +261,7 @@ function notifyAssignments(items: SharedAssignment[]): void {
     win.show()
     win.focus()
     placeWindow(EXPANDED)
+    send(IPC.focusShared, null)
   })
   notification.on('close', release)
   notification.show()
@@ -424,7 +439,7 @@ async function sharedResult(shared: SharedAuth, change: () => Promise<SharedStat
   }
 }
 
-function registerSharedIpc(shared: SharedAuth, sync: SharedSync): void {
+function registerSharedIpc(shared: SharedAuth, sync: SharedSync, lists: SharedLists): void {
   // Signing in or out, or another project, changes what the lists show: sync at once.
   const thenSync = async (change: () => Promise<SharedStatus>): Promise<SharedStatus> => {
     const status = await change()
@@ -439,6 +454,11 @@ function registerSharedIpc(shared: SharedAuth, sync: SharedSync): void {
   ipcMain.handle(IPC.sharedSignOut, () => sharedResult(shared, () => thenSync(() => shared.signOut())))
   ipcMain.handle(IPC.getSharedState, () => sync.state())
   ipcMain.handle(IPC.refreshShared, () => sync.refresh())
+  ipcMain.handle(IPC.sharedAction, async (_e, action: unknown): Promise<SharedActionResult> => {
+    const parsed = SharedActionSchema.safeParse(action)
+    if (!parsed.success) return { ok: false, error: 'Ese cambio no es válido.', state: sync.state() }
+    return lists.apply(parsed.data)
+  })
 }
 
 /** Lets Claude reach this Narsil through the MCP bridge (out/main/mcp.js). */
@@ -513,9 +533,10 @@ if (!app.requestSingleInstanceLock()) {
       source: shared,
       cache: new SharedCacheFileStore(),
       changed: (state) => send(IPC.sharedChanged, state),
-      assigned: notifyAssignments
+      assigned: notifyAssignments,
+      invited: notifyInvitations
     })
-    registerSharedIpc(shared, sharedSync)
+    registerSharedIpc(shared, sharedSync, new SharedLists({ source: shared, sync: sharedSync }))
     sharedSync.start()
     // Coming back to the window shows the latest without waiting for the next poll.
     win?.on('focus', () => void sharedSync?.refresh())

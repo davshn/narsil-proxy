@@ -45,6 +45,7 @@ const api: NarsilApi = {
   getSharedState: () => ipcRenderer.invoke(IPC.getSharedState),
   refreshShared: () => ipcRenderer.invoke(IPC.refreshShared),
   onSharedChanged: (listener) => subscribe(IPC.sharedChanged, listener),
+  sharedAction: (action) => ipcRenderer.invoke(IPC.sharedAction, action),
   onServerRulesChanged: (listener) => subscribe(IPC.serverRulesChanged, listener),
   onRulesChanged: (listener) => subscribe(IPC.rulesChanged, listener),
   onTasksChanged: (listener) => subscribe(IPC.tasksChanged, listener),
@@ -53,6 +54,7 @@ const api: NarsilApi = {
   onMeetingsChanged: (listener) => subscribe(IPC.meetingsChanged, listener),
   onReminder: (listener) => subscribe(IPC.reminder, listener),
   onStatusChanged: (listener) => subscribe(IPC.statusChanged, listener),
+  onFocusShared: (listener) => subscribe(IPC.focusShared, () => listener()),
   onFocusEmail: (listener) => subscribe<string | null | undefined>(IPC.focusEmail, (key) => listener(key ?? null))
 }
 
