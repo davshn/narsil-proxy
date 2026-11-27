@@ -101,3 +101,16 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
 - L19 Evidence: the rewritten pgTAP suite has 74 tests. RED: `accepted_at` did not exist; then a full pass.
   - Mutation: `is_member` ignoring acceptance made tests 17-19, 24 and 64 fail; a reset restored the pass.
   - Advisors: 0 findings.
+- L20 Focused recheck: D1, D2, D3, D5 and D6 are CLOSED, and the acceptance flow passed every attack. Two new minor findings:
+  - `is_accepted(list, email)` answered anyone, so a pending invitee or a former member could probe who joined.
+  - An email change left memberships under the old email: the person lost access, and someone signing up later with the old email could inherit them.
+
+  The recheck also noted a stale header comment. It asked whether S4's "Any member creates and assigns tasks" means any member may reassign. The current reading keeps reassigning to the creator and the assignee, as the owner described the plan.
+- L21 Fixed:
+  - `is_accepted` answers only members of that list.
+  - `sync_profile` moves memberships to the new email. Where the new email is already in a list, it hands over the tasks and drops the old row.
+  - The assignee key gained `on update cascade`, so tasks follow.
+  - `normalize_member` stamps acceptance only on a user update. A system email move keeps the answer, which I found while fixing; before this, a moved pending invitation would have been auto-accepted.
+  - The header comment now describes acceptance.
+
+  Four regression tests failed first. Then 79 pass, a mutation of the old trigger failed test 76, and the advisors report 0 findings.

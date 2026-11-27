@@ -226,6 +226,7 @@ Every permission is a row level security policy in `supabase/migrations/`, so it
 - **Owner:** a list has exactly one owner. Only the owner invites, removes members, renames or deletes the list, and the owner cannot leave it.
 - **Leaving:** any other member can leave. Removing or leaving deletes the tasks assigned to that person; tasks they created for others stay.
 - **Server-side history:** who changed a task last, and when, always comes from the session and the server clock.
+- **Email changes:** when a person changes their account email, their memberships, pending invitations and assigned tasks move to the new email. Nobody who later signs up with the old email inherits them.
 
 The policies are tested in `supabase/tests/` against a local Supabase in Docker:
 

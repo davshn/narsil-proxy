@@ -88,6 +88,8 @@ select is(pg_temp.affected($$update public.list_members set accepted_at = now() 
 select throws_ok(
   $$update public.list_members set email = 'otro@example.com' where email = 'beto@example.com'$$,
   '42501', null, 'an invitation keeps its email');
+select is(public.is_accepted('aaaaaaaa-0000-0000-0000-000000000001', 'ana@example.com'), false,
+  'an invited person cannot probe who joined the list');
 
 select is(
   pg_temp.affected($$update public.list_members set accepted_at = '2000-01-01' where list_id = 'aaaaaaaa-0000-0000-0000-000000000001' and email = 'beto@example.com'$$),
@@ -253,11 +255,30 @@ select ok((select created_at > '2020-01-01' and updated_at > '2020-01-01' from p
 select throws_ok($$update public.shared_tasks set id = gen_random_uuid() where id = 'bbbbbbbb-0000-0000-0000-000000000009'$$,
   'P0001', 'Una tarea no cambia de id, creador ni lista.', 'a task keeps its id');
 
--- ---------- A changed email moves the profile with it ----------
+insert into public.shared_tasks (id, list_id, name, assignee_email) values
+  ('bbbbbbbb-0000-0000-0000-000000000010', 'aaaaaaaa-0000-0000-0000-000000000002', 'Mía', 'beto@example.com');
+set local request.jwt.claims to '{"sub":"44444444-4444-4444-4444-444444444444","role":"authenticated"}';
+insert into public.lists (id, name, owner_id) values ('aaaaaaaa-0000-0000-0000-000000000003', 'Lista de Dani', '44444444-4444-4444-4444-444444444444');
+insert into public.list_members (list_id, email) values ('aaaaaaaa-0000-0000-0000-000000000003', 'beto@example.com');
+
+-- ---------- A changed email moves the profile, the memberships and the assigned tasks ----------
 reset role;
 update auth.users set email = 'Beto.Nuevo@example.com' where id = '22222222-2222-2222-2222-222222222222';
 select is((select email from public.profiles where id = '22222222-2222-2222-2222-222222222222'), 'beto.nuevo@example.com',
   'the profile email follows the account email');
+select is_empty($$select 1 from public.list_members where email = 'beto@example.com'$$,
+  'no membership stays under the old email, for someone else to inherit');
+select is((select assignee_email from public.shared_tasks where id = 'bbbbbbbb-0000-0000-0000-000000000010'), 'beto.nuevo@example.com',
+  'tasks assigned to the old email move to the new one');
+select results_eq(
+  $$select email, accepted_at is null from public.list_members where list_id = 'aaaaaaaa-0000-0000-0000-000000000003' and email like 'beto%'$$,
+  $$values ('beto.nuevo@example.com', true)$$,
+  'a pending invitation moves to the new email and still waits for an answer');
+set local role authenticated;
+set local request.jwt.claims to '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}';
+select results_eq($$select name from public.lists order by name$$, $$values ('Lista de Beto'), ('Lista de Dani')$$,
+  'after changing email he keeps his lists and his pending invitation');
+reset role;
 
 -- ---------- Only signed-in users reach the helpers; no extra table rights ----------
 select ok(not has_function_privilege('anon', 'public.current_email()', 'execute')

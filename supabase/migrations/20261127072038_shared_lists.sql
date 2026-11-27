@@ -1,6 +1,6 @@
--- Shared task lists for Narsil. Membership is by verified email: an invitation opens the list
--- as soon as the invited person signs in. Every permission lives in the row level security
--- policies below; the app only follows them.
+-- Shared task lists for Narsil. Membership is by confirmed email: the owner invites an email,
+-- and that person sees the invitation once signed in and joins only by accepting it. Every
+-- permission lives in the row level security policies below; the app only follows them.
 
 -- ---------- Profiles: the name and email others see ----------
 
@@ -12,12 +12,16 @@ create table public.profiles (
 );
 
 -- A profile exists only for a confirmed email, so an unconfirmed sign-up cannot pose as an
--- invited person or show a made-up name to a list. When the account email changes, the profile
--- follows it, so the profile always names the email that membership is checked against.
+-- invited person or show a made-up name to a list. When the account email changes, the
+-- profile, the memberships and the tasks assigned to that email all move to the new one, so
+-- the person keeps their lists and nobody who later signs up with the old email inherits them.
 -- Membership relies on Supabase Auth confirming every new email: keep "Confirm email" and
 -- "Secure email change" on.
 create function public.sync_profile() returns trigger
 language plpgsql security definer set search_path = '' as $$
+declare
+  old_email text;
+  new_email text := lower(new.email);
 begin
   if new.email_confirmed_at is null or new.email is null then
     return new;
@@ -25,10 +29,23 @@ begin
   insert into public.profiles (id, email, name)
   values (
     new.id,
-    lower(new.email),
+    new_email,
     left(coalesce(new.raw_user_meta_data ->> 'full_name', new.raw_user_meta_data ->> 'name', ''), 200)
   )
   on conflict (id) do update set email = excluded.email;
+
+  if tg_op = 'UPDATE' and old.email is not null and lower(old.email) <> new_email then
+    old_email := lower(old.email);
+    -- Where the new email is already in the list, its row stays: hand it the tasks, drop the old row.
+    update public.shared_tasks t set assignee_email = new_email
+    where t.assignee_email = old_email
+      and exists (select 1 from public.list_members m where m.list_id = t.list_id and m.email = new_email);
+    delete from public.list_members m
+    where m.email = old_email
+      and exists (select 1 from public.list_members n where n.list_id = m.list_id and n.email = new_email);
+    -- Everywhere else the row moves, and its assigned tasks follow through the cascading key.
+    update public.list_members set email = new_email where email = old_email;
+  end if;
   return new;
 end;
 $$;
@@ -68,8 +85,10 @@ create table public.shared_tasks (
   created_at timestamptz not null default now(),
   updated_by uuid references public.profiles (id) on delete set null,
   updated_at timestamptz not null default now(),
-  -- A task is assigned only to a member, and removing that member deletes the tasks assigned to them.
-  foreign key (list_id, assignee_email) references public.list_members (list_id, email) on delete cascade
+  -- A task is assigned only to a member. Removing that member deletes the tasks assigned to them,
+  -- and when the member's email changes the tasks follow it.
+  foreign key (list_id, assignee_email) references public.list_members (list_id, email)
+    on delete cascade on update cascade
 );
 
 create index shared_tasks_list_idx on public.shared_tasks (list_id);
@@ -100,9 +119,11 @@ language sql stable security definer set search_path = '' as $$
   )
 $$;
 
+-- Whether someone accepted, answered only to members of that list, so nobody can probe a
+-- list's members by guessing emails.
 create function public.is_accepted(list uuid, member_email text) returns boolean
 language sql stable security definer set search_path = '' as $$
-  select exists (
+  select public.is_member(list) and exists (
     select 1 from public.list_members m
     where m.list_id = list and m.email = member_email and m.accepted_at is not null
   )
@@ -135,7 +156,9 @@ $$;
 -- ---------- Rules the policies cannot express ----------
 
 -- A new row is an invitation waiting for an answer, except the owner's own, which counts as
--- accepted. Accepting always records the real time.
+-- accepted. Accepting always records the real time. Users can only update accepted_at, so an
+-- update that changes the email is the account email moving (see sync_profile): it keeps the
+-- row's answer as it was.
 create function public.normalize_member() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
@@ -148,8 +171,10 @@ begin
         where l.id = new.list_id and p.email = new.email
       ) then now()
     end;
+  elsif new.email = old.email then
+    new.accepted_at := coalesce(old.accepted_at, now());
   else
-    new.accepted_at := now();
+    new.accepted_at := old.accepted_at;
   end if;
   return new;
 end;
