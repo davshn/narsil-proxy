@@ -16,7 +16,8 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - Decision (2026-11-27): "sí, el responsable puede editar nombre y descripción".
   - Decision (2026-11-27): "Cada lista solo puede tener un dueño." Only the owner invites and removes members.
   - Decision (2026-11-27): "las tareas después de que alguien es expulsado son eliminadas". Confirmed at F2: the tasks assigned to the removed member ("Las asignadas a esa persona"); tasks they created for others stay.
-- S5: Narsil syncs in real time and keeps a local copy to read while offline. Editing needs a connection. A desktop notification shows when someone assigns you a task.
+- S5: Narsil syncs and keeps a local copy to read while offline. Editing needs a connection. A desktop notification shows when someone assigns you a task.
+  - Decision (2026-11-27, D5): "Sí, consulta cada 10 segundos". Narsil polls every 10 seconds instead of using Supabase Realtime. It also refreshes right after the user's own writes and when the window regains focus.
 - S6: Pendientes gets a **Mías / Compartidas** switch. Compartidas shows:
   - list creation and invitations;
   - an assignee picker with names;
@@ -31,8 +32,8 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
 
 - [x] F0 [S2] Owner sets up the Supabase project, Google sign-in and the redirect URL. Route: the owner, guided.
 - [x] F1 [S2] Sign-in spike in Narsil: PKCE, loopback on port 47813, encrypted session with refresh, Ajustes shows the signed-in email. Route: inline.
-- [ ] F2 [S3, S4] Schema, migrations and row level security with policy tests on a local Supabase. Route: inline. Risk: item 2 (security), so it gets an independent verifier and review.
-- [ ] F3 [S5] Sync adapter: realtime, cache, reconnect, notification on assignment. Route: inline.
+- [x] F2 [S3, S4] Schema, migrations and row level security with policy tests on a local Supabase. Route: inline. Risk: item 2 (security), so it gets an independent verifier and review. Commits: 6f359b0, 334e78c, 6910727, 3b09979 (PR #8, merged; applied to the real project on 2026-11-27).
+- [x] F3 [S5] Sync adapter: polling every 10 seconds, local cache, notification on assignment. Route: inline. Branch: `feat/shared-sync`. Risk: none. Evidence: L24-L25.
 - [ ] F4 [S6] Interface. Route: inline.
 - [ ] F5 [S7] MCP tools. Route: inline.
 - [ ] F6 [S8] Docs and a two-account end-to-end test. Route: inline.
@@ -114,3 +115,10 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - The header comment now describes acceptance.
 
   Four regression tests failed first. Then 79 pass, a mutation of the old trigger failed test 76, and the advisors report 0 findings.
+- L22 (2026-11-27) PR #8 merged. The migration was not live at first: REST answered 404 PGRST205 for every table. The owner ran it in the SQL Editor; then the four tables answer 401 to the publishable key without a session, as expected.
+- L23 (2026-11-27) F3 design. Realtime `postgres_changes` would need a publication migration, its own reconnection and token refresh, and it sends delete events without row level security. The parent proposed polling every 10 seconds. User: "Sí, consulta cada 10 segundos".
+- L24 (2026-11-27) F3 built test first. RED: 4 `SharedAuth.session` tests failed and the sync suite could not import its module. GREEN: 16 sync tests and 21 auth tests pass; the full suite is 424/424, typecheck and build pass.
+  - `SharedSync` polls every 10 s, runs one sync at a time plus one more when asked during it, keeps the stored copy when Supabase or the session refresh cannot be reached, and forgets it on sign-out.
+  - It reports a task as newly assigned only against a previous copy of the same user, and only when someone else assigned it.
+  - `SharedAuth.session()` throws when the session exists but cannot be read, so an offline refresh never looks like a sign-out.
+- L25 (2026-11-27) Live check against the real project: after a restart Narsil wrote `shared-cache.json` with 0 profiles, although the user's own profile should be visible. Cause: the owner signed in at F1, before the schema, so the profile trigger never ran. Fix: migration `20261127150402_backfill_profiles.sql`. Checked on the local database: a confirmed pre-schema account gets its profile with a lowercased email, an unconfirmed one gets none, and a second run adds nothing. After `db reset`, 79 policy tests pass and the advisors report 0 findings. No pgTAP test: the statement lives in a migration and runs once.
