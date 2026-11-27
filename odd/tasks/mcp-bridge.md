@@ -49,3 +49,13 @@ Branch: feat/mcp-bridge. Delivery: ask-on-risk (forecast about 600 authored line
     - A test task was created, moved to in-progress, edited and deleted, leaving the task count unchanged.
   - Not verified visually: the open Pendientes tab updating live after an MCP change.
 - L8 Risk: item 2 (a new local IPC endpoint guarded by a token) and item 5 (new dependency `@modelcontextprotocol/sdk`).
+- L9 Independent verifier: S1-S6 PASS, no blockers, 350 tests and the typecheck observed. It reported three minor findings:
+  1. A result that JSON cannot hold jammed the connection's queue and caused an unhandled rejection.
+  2. There was no bound on queued answers per connection.
+  3. The bridge never checks the discovery `pid` against the pipe server.
+- L10 Fixed 1 and 2 in `mcpPipe.ts`:
+  - each answer is serialized inside try/catch;
+  - a connection with more than 64 pending requests is dropped.
+  - Regression tests failed without the fix and pass with it; the suite has 352 passing.
+- L10 Not fixed: finding 3. A real check needs `GetNamedPipeServerProcessId` (native code), and the attack needs another local user plus a Narsil crash.
+- L10 The `save_task` description no longer claims that projects match ignoring case.

@@ -82,6 +82,41 @@ describe('McpPipeServer and callNarsil', () => {
     expect(JSON.parse(await rawCall(pipe, 'hola\n'))).toEqual({ id: -1, ok: false, error: 'Solicitud no válida.' })
   })
 
+  it('keeps answering on a connection after a result that cannot be sent', async () => {
+    const file = await start({ bad: async () => 1n, good: async () => 'ok' })
+    const { pipe, token } = JSON.parse(readFileSync(file, 'utf8'))
+    const lines = [1, 2].map((id) => JSON.stringify({ token, id, tool: id === 1 ? 'bad' : 'good', args: {} })).join('\n')
+    const answers = await new Promise<string[]>((resolve, reject) => {
+      const socket = connect(pipe, () => socket.write(`${lines}\n`))
+      let data = ''
+      socket.on('data', (chunk) => {
+        data += chunk.toString('utf8')
+        const got = data.split('\n').filter(Boolean)
+        if (got.length === 2) {
+          socket.end()
+          resolve(got)
+        }
+      })
+      socket.on('error', reject)
+    })
+    expect(JSON.parse(answers[0]!)).toMatchObject({ id: 1, ok: false })
+    expect(JSON.parse(answers[1]!)).toEqual({ id: 2, ok: true, result: 'ok' })
+  })
+
+  it('drops a connection that floods requests instead of queueing them all', async () => {
+    const file = await start({})
+    const { pipe } = JSON.parse(readFileSync(file, 'utf8'))
+    const answers = await new Promise<number>((resolve, reject) => {
+      const socket = connect(pipe, () => socket.write('{}\n'.repeat(10_000)))
+      let data = ''
+      socket.on('data', (chunk) => (data += chunk.toString('utf8')))
+      socket.on('close', () => resolve(data.split('\n').filter(Boolean).length))
+      socket.on('error', () => undefined)
+      setTimeout(() => reject(new Error('the connection was never closed')), 5000)
+    })
+    expect(answers).toBeLessThan(10_000)
+  })
+
   it('says Narsil is closed when there is no discovery file', async () => {
     await expect(callNarsil(join(dir, 'nada.json'), 'list_tasks', {})).rejects.toThrow(NARSIL_CLOSED)
   })

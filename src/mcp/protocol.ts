@@ -87,7 +87,7 @@ export const MCP_TOOLS = {
   save_task: {
     title: 'Guardar pendiente',
     description:
-      'Adds a task, or edits task `id`. A new task starts as todo. When editing, fields left out keep their value. Projects are matched ignoring case.',
+      'Adds a task, or edits task `id`. A new task starts as todo. When editing, fields left out keep their value; an empty string clears a field. Reuse an existing project name to group tasks together.',
     input: {
       id: TaskId.optional().describe('Leave out to add a new task.'),
       name: z.string().max(200).optional().describe('Required for a new task.'),

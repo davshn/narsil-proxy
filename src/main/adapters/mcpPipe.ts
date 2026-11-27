@@ -5,6 +5,9 @@ import { dirname } from 'node:path'
 import { MCP_MAX_LINE, McpRequestSchema, type McpDiscovery, type McpResponse } from '../../mcp/protocol'
 import type { McpHandler } from '../app/mcpTools'
 
+/** Requests one connection may have waiting for an answer before it is dropped. */
+const MAX_PENDING = 64
+
 export interface McpPipeOptions {
   /** Where to write how to reach this server (see mcpDiscoveryFile). */
   file: string
@@ -55,6 +58,7 @@ export class McpPipeServer {
     let buffer = ''
     // One request at a time per connection keeps answers in order.
     let queue = Promise.resolve()
+    let pending = 0
     socket.setEncoding('utf8')
     socket.on('error', () => socket.destroy())
     socket.on('data', (chunk: string) => {
@@ -67,9 +71,24 @@ export class McpPipeServer {
       while ((newline = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, newline)
         buffer = buffer.slice(newline + 1)
+        // The bridge sends one call at a time; a flood is not a client to keep buffering for.
+        if (++pending > MAX_PENDING) {
+          socket.destroy()
+          return
+        }
         queue = queue.then(async () => {
-          const answer = await this.answer(line)
-          if (!socket.destroyed) socket.write(`${JSON.stringify(answer)}\n`)
+          let id = -1
+          let text: string
+          try {
+            const answer = await this.answer(line)
+            id = answer.id
+            text = JSON.stringify(answer)
+          } catch {
+            // A result JSON cannot hold (a BigInt, a cycle): answer anyway so the line stays usable.
+            text = JSON.stringify({ id, ok: false, error: 'Narsil no pudo enviar la respuesta.' } satisfies McpResponse)
+          }
+          pending -= 1
+          if (!socket.destroyed) socket.write(`${text}\n`)
         })
       }
     })
