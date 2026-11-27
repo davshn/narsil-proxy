@@ -151,8 +151,11 @@ The **Pendientes** (to-dos) tab keeps the tasks you jot down. Each task has:
 - **Nombre** (name): required.
 - **Proyecto** (project): optional. The field suggests the projects you already used.
 - **Descripción** (description): optional.
+- **Estado** (status): a label under the task that you change from its menu. A new task starts as **Por hacer**; the others are **Iniciada**, **En curso**, **En pausa** and **Terminada**.
 
-Tasks are grouped by project, ignoring case, and tasks without a project come last. Inside a group, pending tasks come first, newest first. You can mark a task done, edit it or delete it; deleting asks once more. When there is more than one group, a selector shows a single project. The tab label shows how many tasks are still pending.
+Tasks are grouped by project, ignoring case, and tasks without a project come last. Inside a group, unfinished tasks come first, newest first, and **Terminada** ones go last. You can edit a task or delete it when you no longer need it; deleting asks once more. When there is more than one group, a selector shows a single project. The tab label shows how many tasks are not finished yet.
+
+Tasks saved before statuses existed keep working: a task marked done becomes **Terminada** and the rest **Por hacer**.
 
 Tasks are stored on this computer only, as plain JSON in `%APPDATA%\narsil-proxy\tasks.json`. They are never sent to Claude or to your mail accounts.
 

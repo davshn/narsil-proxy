@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { PendingTask, PendingTaskInput } from '@shared/types'
+import type { PendingTask, PendingTaskInput, TaskStatus } from '@shared/types'
 
 export const MAX_TASK_NAME = 200
 export const MAX_TASK_PROJECT = 100
@@ -51,17 +51,17 @@ export class TaskList {
     }
     const tasks = this.current()
     if (input.id === undefined) {
-      return this.commit([...tasks, { id: this.newId(), ...fields, done: false, createdAt: this.now().toISOString() }])
+      return this.commit([...tasks, { id: this.newId(), ...fields, status: 'todo', createdAt: this.now().toISOString() }])
     }
     const id = input.id
     if (!tasks.some((task) => task.id === id)) throw new Error(MISSING)
     return this.commit(tasks.map((task) => (task.id === id ? { ...task, ...fields } : task)))
   }
 
-  setDone(id: string, done: boolean): PendingTask[] {
+  setStatus(id: string, status: TaskStatus): PendingTask[] {
     const tasks = this.current()
     if (!tasks.some((task) => task.id === id)) throw new Error(MISSING)
-    return this.commit(tasks.map((task) => (task.id === id ? { ...task, done } : task)))
+    return this.commit(tasks.map((task) => (task.id === id ? { ...task, status } : task)))
   }
 
   remove(id: string): PendingTask[] {

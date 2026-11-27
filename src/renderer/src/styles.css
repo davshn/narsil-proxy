@@ -771,20 +771,82 @@ textarea {
 
 .task {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: start;
-  gap: 8px;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    'what what'
+    'status actions';
+  align-items: center;
+  gap: 6px 8px;
   padding: 8px 4px;
   border-bottom: 1px solid var(--line);
 }
 
-.task__check {
-  margin: 3px 0 0;
-  accent-color: var(--accent-fill);
+.task__what {
+  grid-area: what;
+  min-width: 0;
 }
 
-.task__what {
-  min-width: 0;
+/* The status label is the select itself, tinted by how far along the task is. */
+.task__status {
+  --tone: var(--text-2);
+  grid-area: status;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  color: var(--tone);
+}
+
+.task__status[data-status='started'] {
+  --tone: var(--accent-text);
+}
+
+.task__status[data-status='in-progress'] {
+  --tone: var(--accent-text);
+}
+
+.task__status[data-status='paused'] {
+  --tone: var(--warning-fill);
+}
+
+.task__status[data-status='done'] {
+  --tone: var(--success);
+}
+
+.task__status select {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 2px 22px 2px 9px;
+  border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 14%, var(--surface-2));
+  color: inherit;
+  color-scheme: inherit;
+  cursor: pointer;
+}
+
+.task__status[data-status='in-progress'] select {
+  border-color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 26%, var(--surface-2));
+}
+
+.task__status select option {
+  background: var(--surface-3);
+  color: var(--text-0);
+  font-weight: 400;
+}
+
+.task__status select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.task__status svg {
+  position: absolute;
+  right: 9px;
+  pointer-events: none;
 }
 
 .task__name {
@@ -808,6 +870,8 @@ textarea {
 }
 
 .task__actions {
+  grid-area: actions;
+  justify-self: end;
   display: flex;
   gap: 8px;
   font-size: 12px;

@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { themeAt } from '@shared/dayNight'
 import {
   IPC,
+  TASK_STATUSES,
   type Account,
   type ActionResult,
   type EmailAction,
@@ -353,8 +354,8 @@ function taskResult(tasks: TaskList, change: () => PendingTask[]): TasksResult {
 function registerTaskIpc(tasks: TaskList): void {
   ipcMain.handle(IPC.getTasks, () => taskResult(tasks, () => tasks.list()))
   ipcMain.handle(IPC.saveTask, (_e, input: unknown) => taskResult(tasks, () => tasks.save(PendingTaskInputSchema.parse(input))))
-  ipcMain.handle(IPC.setTaskDone, (_e, id: unknown, done: unknown) =>
-    taskResult(tasks, () => tasks.setDone(TaskId.parse(id), z.boolean().parse(done)))
+  ipcMain.handle(IPC.setTaskStatus, (_e, id: unknown, status: unknown) =>
+    taskResult(tasks, () => tasks.setStatus(TaskId.parse(id), z.enum(TASK_STATUSES).parse(status)))
   )
   ipcMain.handle(IPC.deleteTask, (_e, id: unknown) => taskResult(tasks, () => tasks.remove(TaskId.parse(id))))
 }

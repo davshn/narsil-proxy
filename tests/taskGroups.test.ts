@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import type { PendingTask } from '@shared/types'
+import type { PendingTask, TaskStatus } from '@shared/types'
 import { NO_PROJECT, groupTasks, projectsOf } from '../src/renderer/src/components/taskGroups'
 
-function task(id: string, project: string, done = false, createdAt = '2026-11-26T12:00:00.000Z'): PendingTask {
-  return { id, name: id, description: '', project, done, createdAt }
+function task(id: string, project: string, status: TaskStatus = 'todo', createdAt = '2026-11-26T12:00:00.000Z'): PendingTask {
+  return { id, name: id, description: '', project, status, createdAt }
 }
 
 describe('groupTasks', () => {
@@ -16,11 +16,11 @@ describe('groupTasks', () => {
     ])
   })
 
-  it('lists pending tasks first, newest first, then the done ones', () => {
+  it('lists unfinished tasks first, newest first, then the finished ones', () => {
     const groups = groupTasks([
-      task('old', 'P', false, '2026-11-01T00:00:00.000Z'),
-      task('done', 'P', true, '2026-11-30T00:00:00.000Z'),
-      task('new', 'P', false, '2026-11-20T00:00:00.000Z')
+      task('old', 'P', 'in-progress', '2026-11-01T00:00:00.000Z'),
+      task('done', 'P', 'done', '2026-11-30T00:00:00.000Z'),
+      task('new', 'P', 'paused', '2026-11-20T00:00:00.000Z')
     ])
     expect(groups[0]?.tasks.map((t) => t.id)).toEqual(['new', 'old', 'done'])
     expect(groups[0]?.pending).toBe(2)
