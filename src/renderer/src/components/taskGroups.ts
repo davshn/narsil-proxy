@@ -1,4 +1,15 @@
-import type { PendingTask } from '@shared/types'
+import type { PendingTask, TaskStatus } from '@shared/types'
+
+/** What each status reads as on the task's label. */
+export const STATUS_LABEL: Record<TaskStatus, string> = {
+  todo: 'Por hacer',
+  started: 'Iniciada',
+  'in-progress': 'En curso',
+  paused: 'En pausa',
+  done: 'Terminada'
+}
+
+export const isFinished = (task: PendingTask): boolean => task.status === 'done'
 
 /** The filter value and group of tasks without a project. Never a real project: those are trimmed. */
 export const NO_PROJECT = ' sin-proyecto'
@@ -7,6 +18,7 @@ export interface TaskGroup {
   /** The project as first written, or NO_PROJECT. */
   project: string
   tasks: PendingTask[]
+  /** Tasks not finished yet. */
   pending: number
 }
 
@@ -14,9 +26,9 @@ const keyOf = (project: string): string => (project ? project.toLocaleLowerCase(
 
 const byName = (a: string, b: string): number => a.localeCompare(b, undefined, { sensitivity: 'base' })
 
-/** Pending first and newest first, then the done ones, newest first too. */
+/** Unfinished first and newest first, then the finished ones, newest first too. */
 function byState(a: PendingTask, b: PendingTask): number {
-  if (a.done !== b.done) return a.done ? 1 : -1
+  if (isFinished(a) !== isFinished(b)) return isFinished(a) ? 1 : -1
   return b.createdAt.localeCompare(a.createdAt)
 }
 
@@ -31,7 +43,7 @@ export function groupTasks(tasks: PendingTask[], filter?: string): TaskGroup[] {
     if (filter !== undefined && key !== keyOf(filter === NO_PROJECT ? '' : filter)) continue
     const group = groups.get(key) ?? { project: task.project || NO_PROJECT, tasks: [], pending: 0 }
     group.tasks.push(task)
-    if (!task.done) group.pending += 1
+    if (!isFinished(task)) group.pending += 1
     groups.set(key, group)
   }
   const sorted = [...groups.values()].sort((a, b) => {

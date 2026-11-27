@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import type { PendingTask, PendingTaskInput, TasksResult } from '@shared/types'
-import { NO_PROJECT, groupTasks, projectsOf } from './taskGroups'
+import { TASK_STATUSES, type PendingTask, type PendingTaskInput, type TasksResult } from '@shared/types'
+import { NO_PROJECT, STATUS_LABEL, groupTasks, isFinished, projectsOf } from './taskGroups'
 
 /** The app checks these again; the inputs only keep typing within them. */
 const MAX_NAME = 200
@@ -82,22 +82,33 @@ export function Tasks({ tasks, onResult }: TasksProps): React.JSX.Element {
           <section key={group.project} className="tasks__group" aria-label={label(group.project)}>
             <h3 className="tasks__project">
               {label(group.project)}
-              <span className="tasks__count">{group.pending === 0 ? 'todo hecho' : `${group.pending} por hacer`}</span>
+              <span className="tasks__count">
+                {group.pending === 0 ? 'todo terminado' : `${group.pending} sin terminar`}
+              </span>
             </h3>
             <ul className="tasks">
               {group.tasks.map((task) => (
-                <li key={task.id} className={task.done ? 'task task--done' : 'task'}>
-                  <input
-                    type="checkbox"
-                    className="task__check"
-                    checked={task.done}
-                    aria-label={task.done ? `Marcar "${task.name}" como pendiente` : `Marcar "${task.name}" como hecha`}
-                    onChange={(e) => void call(window.narsil.setTaskDone(task.id, e.target.checked))}
-                  />
+                <li key={task.id} className={isFinished(task) ? 'task task--done' : 'task'}>
                   <div className="task__what">
                     <span className="task__name">{task.name}</span>
                     {task.description && <p className="task__description">{task.description}</p>}
                   </div>
+                  <label className="task__status" data-status={task.status}>
+                    <select
+                      value={task.status}
+                      aria-label={`Estado de "${task.name}"`}
+                      onChange={(e) => void call(window.narsil.setTaskStatus(task.id, e.target.value as PendingTask['status']))}
+                    >
+                      {TASK_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {STATUS_LABEL[status]}
+                        </option>
+                      ))}
+                    </select>
+                    <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+                      <path d="M1 2.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    </svg>
+                  </label>
                   <div className="task__actions">
                     {confirming === task.id ? (
                       <>

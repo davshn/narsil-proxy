@@ -223,6 +223,10 @@ export interface ActionResult {
   error?: string
 }
 
+/** How far along a task is, in the order the user moves it. Only 'done' counts as finished. */
+export const TASK_STATUSES = ['todo', 'started', 'in-progress', 'paused', 'done'] as const
+export type TaskStatus = (typeof TASK_STATUSES)[number]
+
 /** A to-do the user wrote down in "Pendientes". Stored locally; never sent anywhere. */
 export interface PendingTask {
   id: string
@@ -231,7 +235,7 @@ export interface PendingTask {
   description: string
   /** The project it belongs to; empty when it has none. */
   project: string
-  done: boolean
+  status: TaskStatus
   /** ISO 8601 timestamp. */
   createdAt: string
 }
@@ -299,7 +303,7 @@ export interface NarsilApi {
   getTasks(): Promise<TasksResult>
   /** Adds a task, or edits task `input.id`. The name must not be blank. */
   saveTask(input: PendingTaskInput): Promise<TasksResult>
-  setTaskDone(id: string, done: boolean): Promise<TasksResult>
+  setTaskStatus(id: string, status: TaskStatus): Promise<TasksResult>
   deleteTask(id: string): Promise<TasksResult>
   onServerRulesChanged(listener: (rules: AccountRules[]) => void): () => void
   onRulesChanged(listener: (rules: Rule[]) => void): () => void
@@ -341,7 +345,7 @@ export const IPC = {
   reconnectAccount: 'narsil:reconnect-account',
   getTasks: 'narsil:get-tasks',
   saveTask: 'narsil:save-task',
-  setTaskDone: 'narsil:set-task-done',
+  setTaskStatus: 'narsil:set-task-status',
   deleteTask: 'narsil:delete-task',
   serverRulesChanged: 'narsil:server-rules-changed',
   rulesChanged: 'narsil:rules-changed',

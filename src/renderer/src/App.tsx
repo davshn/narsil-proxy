@@ -57,7 +57,7 @@ export function App(): React.JSX.Element {
     setTasks(result.tasks)
     if (result.ok) setTasksError(null)
   }, [])
-  const pendingTasks = tasks.filter((t) => !t.done).length
+  const pendingTasks = tasks.filter((t) => t.status !== 'done').length
 
   /** Shows the "done" pose for a few seconds; a new success restarts the clock. */
   const celebrate = useCallback(() => {
