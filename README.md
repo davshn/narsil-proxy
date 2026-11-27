@@ -196,7 +196,7 @@ Tasks saved before statuses existed keep working: a task marked done becomes **T
 
 Tasks are stored on this computer only, as plain JSON in `%APPDATA%\narsil-proxy\tasks.json`. They are never sent to Claude or to your mail accounts.
 
-### Shared lists (in progress)
+### Shared lists
 
 Shared lists let Narsil users give each other tasks. They live in a [Supabase](https://supabase.com) project, apart from your personal Pendientes, which stay on this computer. They show in **Pendientes → Compartidas**, and Claude can use them through [MCP](#use-narsil-from-claude-mcp).
 
@@ -211,6 +211,20 @@ Shared lists let Narsil users give each other tasks. They live in a [Supabase](h
 6. Create the tables and their rules from `supabase/migrations/`. Use one of these:
    - **SQL Editor:** paste each file, in order, into the Supabase **SQL Editor** and run it.
    - **CLI:** run `npx supabase link --project-ref <project>`, then `npx supabase db push`. It asks for your database password.
+
+**Adding another person**
+
+The owner, once per person:
+
+1. Add their Google email under **Google Auth Platform → Audience → Test users**, while the consent screen is in testing. Without it, Google refuses their sign-in.
+2. Send them the project URL and the public key. Both are public by design: what each person may read or change is decided by the database rules, not by the key. Never send the secret key or the database password.
+3. In **Pendientes → Compartidas**, invite their Google email to a list. No email is sent, so tell them.
+
+The other person:
+
+1. Install Narsil: run the installer the owner built with `npm run dist`, or follow [Run Narsil](#2-run-narsil). For shared lists alone they need no mail account, Google OAuth client or Anthropic key.
+2. In **Ajustes → Listas compartidas**, paste the project URL and the public key, choose **Guardar proyecto**, then **Iniciar sesión con Google** with the email the owner invited.
+3. Within 10 seconds Narsil shows "*Name* te invitó a una lista". Accept it at the top of **Pendientes → Compartidas**.
 
 **How the data is protected**
 
