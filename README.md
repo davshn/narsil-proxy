@@ -215,7 +215,7 @@ What Claude can do:
 | `delete_email` | Moves an email from the list to the trash. Marked destructive. |
 | `move_email` | Moves an email to a label or folder of its account. Marked destructive. |
 | `reply_email` | Sends a reply from the account that received the email. Marked destructive. |
-| `create_meeting` | Adds a meeting to an account's calendar. |
+| `create_meeting` | Adds a meeting to an account's calendar, or a weekly series on chosen days until a date. |
 | `create_rule` | Creates a local Narsil rule. It also acts on the current list right away. Marked destructive. |
 | `create_server_rule` | Creates a Gmail filter or an Outlook inbox rule in one account. It also acts on the current list right away. Marked destructive. |
 
