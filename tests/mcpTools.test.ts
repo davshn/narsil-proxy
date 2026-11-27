@@ -53,7 +53,12 @@ function setup(): { handlers: ReturnType<typeof createMcpHandlers>; repo: Memory
     upcomingMeetings: () => [meeting],
     rules: () => [],
     serverRules: () => [{ accountId: 'a1', rules: [], loaded: true, needsReconnect: false }],
-    listFolders: vi.fn(async () => [{ id: 'L1', name: 'Facturas' }])
+    listFolders: vi.fn(async () => [{ id: 'L1', name: 'Facturas' }]),
+    applyAction: vi.fn(async () => undefined),
+    sendReply: vi.fn(async () => undefined),
+    createMeeting: vi.fn(async (_accountId: string, input) => ({ id: 'a1:new', accountId: 'a1', ...input })),
+    saveRule: vi.fn(async () => undefined),
+    saveServerRule: vi.fn(async () => undefined)
   }
   const changed = vi.fn()
   return { handlers: createMcpHandlers({ service, tasks, tasksChanged: changed }), repo, changed, service }
@@ -151,5 +156,91 @@ describe('Pendientes through MCP', () => {
     expect(repo.tasks).toEqual([])
     expect(changed).toHaveBeenCalledTimes(3)
     expect(changed).toHaveBeenLastCalledWith([])
+  })
+})
+
+describe('mail actions through MCP', () => {
+  it.each([
+    ['archive_email', 'archive', { key: 'a1:m1' }, { archived: 'a1:m1' }],
+    ['delete_email', 'delete', { key: 'a1:m1' }, { deleted: 'a1:m1' }]
+  ] as const)('%s acts on the email by its key', async (tool, action, args, answer) => {
+    const { handlers, service } = setup()
+    expect(await handlers[tool](args)).toEqual(answer)
+    expect(service.applyAction).toHaveBeenCalledWith('a1:m1', action, undefined)
+  })
+
+  it('move_email moves the email to the folder', async () => {
+    const { handlers, service } = setup()
+    expect(await handlers.move_email({ key: 'a1:m1', folderId: 'L1' })).toEqual({ moved: 'a1:m1', folderId: 'L1' })
+    expect(service.applyAction).toHaveBeenCalledWith('a1:m1', 'save', 'L1')
+  })
+
+  it('reply_email sends the reply from the account that received it', async () => {
+    const { handlers, service } = setup()
+    expect(await handlers.reply_email({ key: 'a1:m1', body: 'Gracias, la reviso hoy.' })).toEqual({ replied: 'a1:m1' })
+    expect(service.sendReply).toHaveBeenCalledWith('a1:m1', 'Gracias, la reviso hoy.')
+  })
+
+  it('passes the service error back, so Claude can read it', async () => {
+    const { handlers, service } = setup()
+    vi.mocked(service.applyAction).mockRejectedValueOnce(new Error('Este correo ya no está en la lista.'))
+    await expect(handlers.archive_email({ key: 'a1:gone' })).rejects.toThrow('Este correo ya no está en la lista.')
+  })
+
+  it('rejects a move without a folder and a reply without text', async () => {
+    const { handlers, service } = setup()
+    await expect(handlers.move_email({ key: 'a1:m1' })).rejects.toThrow()
+    await expect(handlers.reply_email({ key: 'a1:m1', body: '' })).rejects.toThrow()
+    expect(service.applyAction).not.toHaveBeenCalled()
+    expect(service.sendReply).not.toHaveBeenCalled()
+  })
+})
+
+describe('meetings and rules through MCP', () => {
+  it('create_meeting adds it to the account calendar and returns it', async () => {
+    const { handlers, service } = setup()
+    const input = { title: 'Revisión', start: '2026-11-28T15:00:00.000Z', end: '2026-11-28T15:30:00.000Z', location: 'Meet' }
+    expect(await handlers.create_meeting({ accountId: 'a1', ...input })).toEqual({ id: 'a1:new', accountId: 'a1', ...input })
+    expect(service.createMeeting).toHaveBeenCalledWith('a1', input)
+  })
+
+  it('create_rule adds an enabled local rule, with empty conditions left out', async () => {
+    const { handlers, service } = setup()
+    expect(await handlers.create_rule({ name: 'Boletines', from: 'news@x.com', action: 'archive' })).toEqual({ localRules: [] })
+    expect(service.saveRule).toHaveBeenCalledWith({
+      name: 'Boletines',
+      enabled: true,
+      conditions: { from: 'news@x.com', subject: '', body: '' },
+      action: 'archive'
+    })
+  })
+
+  it('create_rule passes the folder of a save rule', async () => {
+    const { handlers, service } = setup()
+    const folder = { accountId: 'a1', id: 'L1', name: 'Facturas' }
+    await handlers.create_rule({ name: 'Facturas', subject: 'factura', action: 'save', folder })
+    expect(service.saveRule).toHaveBeenCalledWith(expect.objectContaining({ action: 'save', folder }))
+  })
+
+  it('create_server_rule creates it in the account and returns that account rules', async () => {
+    const { handlers, service } = setup()
+    const result = await handlers.create_server_rule({ accountId: 'a1', name: 'Facturas', subject: 'factura', action: 'move', folderId: 'L1', folderName: 'Facturas' })
+    expect(service.saveServerRule).toHaveBeenCalledWith({
+      accountId: 'a1',
+      name: 'Facturas',
+      conditions: { from: '', subject: 'factura', body: '' },
+      action: 'move',
+      folderId: 'L1',
+      folderName: 'Facturas'
+    })
+    expect(result).toEqual({ accountId: 'a1', account: 'yo@gmail.com', rules: [], loaded: true, needsReconnect: false })
+  })
+
+  it('never accepts an id, so rules can only be created', async () => {
+    const { handlers, service } = setup()
+    await expect(handlers.create_rule({ id: 'r1', name: 'x', action: 'archive' })).rejects.toThrow()
+    await expect(handlers.create_server_rule({ id: 'f1', accountId: 'a1', name: 'x', action: 'archive' })).rejects.toThrow()
+    expect(service.saveRule).not.toHaveBeenCalled()
+    expect(service.saveServerRule).not.toHaveBeenCalled()
   })
 })
