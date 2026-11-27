@@ -250,7 +250,7 @@ The session is encrypted under `secrets/shared-session.bin` and survives restart
 
 While you are signed in, Narsil reads your shared lists every 10 seconds. It also reads them right after you sign in and when you bring its window back. It polls instead of using Supabase Realtime, which needs no extra database setup and never sends you events about rows you cannot see.
 
-The last copy is kept in `shared-cache.json`, so the lists still show while you are offline. Signing out deletes it. When someone else assigns you a task, or reassigns one to you, Windows shows "*Name* te asignó una tarea" with the task and its list. Several at once arrive as one notification, "N tareas nuevas para ti".
+The last copy is kept in `shared-cache.json`, so the lists still show while you are offline. Signing out deletes it. When someone else assigns you a task, or reassigns one to you, Windows shows "*Name* te asignó una tarea" with the task and its list. Several at once arrive as one notification, "N tareas nuevas para ti". An invitation to a list also shows one, "*Name* te invitó a una lista". No email is sent: tell the person, and they see the invitation in Compartidas once they sign in with that Google email.
 
 If you signed in before the tables existed, apply every migration, including `…_backfill_profiles.sql`: it creates the profile that account is missing.
 

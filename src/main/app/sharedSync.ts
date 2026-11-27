@@ -32,11 +32,19 @@ export interface SharedAssignment {
   by: SharedPerson | undefined
 }
 
+/** A list someone invited the user to since the previous sync. */
+export interface SharedInvitation {
+  list: SharedList
+  /** The owner who invited them; undefined when that profile is not visible. */
+  by: SharedPerson | undefined
+}
+
 export interface SharedSyncDeps {
   source: SharedSource
   cache: SharedCacheRepository
   changed(state: SharedState): void
   assigned(items: SharedAssignment[]): void
+  invited(items: SharedInvitation[]): void
   now?: () => Date
   intervalMs?: number
 }
@@ -159,6 +167,15 @@ function newAssignments(previous: SharedSnapshot | null, next: SharedSnapshot): 
     }))
 }
 
+/** Invitations waiting now that were not in the previous copy of the same user. */
+function newInvitations(previous: SharedSnapshot | null, next: SharedSnapshot): SharedInvitation[] {
+  if (!previous || previous.userId !== next.userId) return []
+  const before = new Set(previous.lists.map((l) => l.id))
+  return next.lists
+    .filter((l) => !l.accepted && !before.has(l.id))
+    .map((list) => ({ list, by: next.people.find((p) => p.id === list.ownerId) }))
+}
+
 /**
  * Keeps a local copy of the shared lists in step with Supabase by polling. Reads only: writes
  * go straight to Supabase and then call `refresh`.
@@ -217,9 +234,11 @@ export class SharedSync {
       } else {
         const snapshot = await snapshotOf(session, this.deps.now?.() ?? new Date())
         const assigned = newAssignments(this.current.snapshot, snapshot)
+        const invited = newInvitations(this.current.snapshot, snapshot)
         this.deps.cache.save(snapshot)
         next = { signedIn: true, snapshot }
         if (assigned.length > 0) this.deps.assigned(assigned)
+        if (invited.length > 0) this.deps.invited(invited)
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

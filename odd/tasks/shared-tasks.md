@@ -18,6 +18,7 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - Decision (2026-11-27): "las tareas después de que alguien es expulsado son eliminadas". Confirmed at F2: the tasks assigned to the removed member ("Las asignadas a esa persona"); tasks they created for others stay.
 - S5: Narsil syncs and keeps a local copy to read while offline. Editing needs a connection. A desktop notification shows when someone assigns you a task.
   - Decision (2026-11-27, D5): "Sí, consulta cada 10 segundos". Narsil polls every 10 seconds instead of using Supabase Realtime. It also refreshes right after the user's own writes and when the window regains focus.
+  - Decision (2026-11-27): a desktop notification also shows when someone invites the user to a list. User: "Sí, agrégalo". No email is sent.
 - S6: Pendientes gets a **Mías / Compartidas** switch. Compartidas shows:
   - list creation and invitations;
   - an assignee picker with names;
@@ -127,3 +128,5 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - Screens: **Mías / Compartidas** switch, invitations, lists, members, tasks with assignee, status and last change. The view logic (`sharedView.ts`) has 9 tests; RED was a missing module.
   - The tab count adds unfinished shared tasks assigned to the user. A clicked assignment notification opens Compartidas.
   - Full suite 447/447, typecheck and build pass. After a restart Narsil kept syncing. Not checked on screen: the desktop approval was not available over Remote Control, so the owner checks the screens.
+- L27 (2026-11-27) User asked whether an invitation sends an email. It does not: it only adds a member row, which the invited person sees after signing in. User: "Sí, agrégalo" to a desktop notification on new invitations (S5).
+- L28 (2026-11-27) Invitation notifications built test first. RED: 1 of 3 new sync tests failed. GREEN: 450/450, typecheck and build pass. A new invitation is reported only against a previous copy of the same user, never on a first sync, and never again once reported or accepted.
