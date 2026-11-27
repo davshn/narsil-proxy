@@ -236,6 +236,13 @@ export interface ActionResult {
   error?: string
 }
 
+/** Signing in to shared lists. `email` is there while a session is active. */
+export interface SharedStatus {
+  configured: boolean
+  projectUrl?: string
+  email?: string
+}
+
 /** How far along a task is, in the order the user moves it. Only 'done' counts as finished. */
 export const TASK_STATUSES = ['todo', 'started', 'in-progress', 'paused', 'done'] as const
 export type TaskStatus = (typeof TASK_STATUSES)[number]
@@ -259,6 +266,11 @@ export interface PendingTaskInput {
   name: string
   description: string
   project: string
+}
+
+/** The shared-lists sign-in after the call, also when it failed. */
+export interface SharedResult extends ActionResult {
+  status: SharedStatus
 }
 
 /** Every task after the call, also when it failed, so the list always shows what is stored. */
@@ -318,6 +330,12 @@ export interface NarsilApi {
   saveTask(input: PendingTaskInput): Promise<TasksResult>
   setTaskStatus(id: string, status: TaskStatus): Promise<TasksResult>
   deleteTask(id: string): Promise<TasksResult>
+  getSharedStatus(): Promise<SharedResult>
+  /** Saves the Supabase project URL and its public key; a session from another project is dropped. */
+  setSharedConfig(url: string, publishableKey: string): Promise<SharedResult>
+  /** Opens the browser to sign in with Google and waits for it to come back. */
+  sharedSignIn(): Promise<SharedResult>
+  sharedSignOut(): Promise<SharedResult>
   onServerRulesChanged(listener: (rules: AccountRules[]) => void): () => void
   onRulesChanged(listener: (rules: Rule[]) => void): () => void
   /** Tasks changed outside the window, through the MCP bridge. */
@@ -362,6 +380,10 @@ export const IPC = {
   saveTask: 'narsil:save-task',
   setTaskStatus: 'narsil:set-task-status',
   deleteTask: 'narsil:delete-task',
+  getSharedStatus: 'narsil:get-shared-status',
+  setSharedConfig: 'narsil:set-shared-config',
+  sharedSignIn: 'narsil:shared-sign-in',
+  sharedSignOut: 'narsil:shared-sign-out',
   serverRulesChanged: 'narsil:server-rules-changed',
   rulesChanged: 'narsil:rules-changed',
   tasksChanged: 'narsil:tasks-changed',

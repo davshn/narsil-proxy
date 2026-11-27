@@ -15,6 +15,8 @@ import {
   type FoldersResult,
   type InboxItem,
   type PendingTask,
+  type SharedResult,
+  type SharedStatus,
   type TasksResult
 } from '@shared/types'
 import { SecureStore } from './adapters/secureStore'
@@ -23,6 +25,9 @@ import { AccountRegistry, AccountSettingsSchema, migrateLegacyGoogleTokens } fro
 import { RulesFileStore } from './adapters/rulesStore'
 import { TasksFileStore } from './adapters/tasksStore'
 import { McpPipeServer } from './adapters/mcpPipe'
+import { SharedConfigFileStore } from './adapters/sharedConfigStore'
+import { makeSupabaseAuth } from './adapters/supabaseClient'
+import { SharedAuth } from './app/sharedAuth'
 import { createMcpHandlers } from './app/mcpTools'
 import { mcpDiscoveryFile } from '../mcp/protocol'
 import { MAX_TASK_DESCRIPTION, MAX_TASK_NAME, MAX_TASK_PROJECT, TaskList } from './app/tasks'
@@ -370,6 +375,30 @@ function registerTaskIpc(tasks: TaskList): void {
   ipcMain.handle(IPC.deleteTask, (_e, id: unknown) => taskResult(tasks, () => tasks.remove(TaskId.parse(id))))
 }
 
+/** Runs a shared-lists call and answers with the sign-in status, the current one when it failed. */
+async function sharedResult(shared: SharedAuth, change: () => Promise<SharedStatus>): Promise<SharedResult> {
+  try {
+    return { ok: true, status: await change() }
+  } catch (error) {
+    let status: SharedStatus = { configured: false }
+    try {
+      status = await shared.status()
+    } catch {
+      // Keep the empty status: the failure is already reported.
+    }
+    return { ...failure(error), status }
+  }
+}
+
+function registerSharedIpc(shared: SharedAuth): void {
+  ipcMain.handle(IPC.getSharedStatus, () => sharedResult(shared, () => shared.status()))
+  ipcMain.handle(IPC.setSharedConfig, (_e, url: unknown, key: unknown) =>
+    sharedResult(shared, () => shared.setConfig(z.string().max(300).parse(url), z.string().max(500).parse(key)))
+  )
+  ipcMain.handle(IPC.sharedSignIn, () => sharedResult(shared, () => shared.signIn()))
+  ipcMain.handle(IPC.sharedSignOut, () => sharedResult(shared, () => shared.signOut()))
+}
+
 /** Lets Claude reach this Narsil through the MCP bridge (out/main/mcp.js). */
 function startMcp(svc: NarsilService, tasks: TaskList): void {
   const server = new McpPipeServer(createMcpHandlers({ service: svc, tasks, tasksChanged: (list) => send(IPC.tasksChanged, list) }), {
@@ -432,6 +461,14 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc(service)
     const tasks = new TaskList(new TasksFileStore())
     registerTaskIpc(tasks)
+    registerSharedIpc(
+      new SharedAuth({
+        configs: new SharedConfigFileStore(),
+        secrets: store,
+        makeClient: makeSupabaseAuth,
+        openBrowser: (url) => shell.openExternal(url)
+      })
+    )
     service.start()
     startMcp(service, tasks)
   })

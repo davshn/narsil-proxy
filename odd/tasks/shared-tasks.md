@@ -28,8 +28,8 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
 
 ## Tasks
 
-- [ ] F0 [S2] Owner sets up the Supabase project, Google sign-in and the redirect URL. Route: the owner, guided.
-- [ ] F1 [S2] Sign-in spike in Narsil: PKCE, loopback on port 47813, encrypted session with refresh, Ajustes shows the signed-in email. Route: inline.
+- [x] F0 [S2] Owner sets up the Supabase project, Google sign-in and the redirect URL. Route: the owner, guided.
+- [x] F1 [S2] Sign-in spike in Narsil: PKCE, loopback on port 47813, encrypted session with refresh, Ajustes shows the signed-in email. Route: inline.
 - [ ] F2 [S3, S4] Schema, migrations and row level security with policy tests on a local Supabase. Route: inline. Risk: item 2 (security), so it gets an independent verifier and review.
 - [ ] F3 [S5] Sync adapter: realtime, cache, reconnect, notification on assignment. Route: inline.
 - [ ] F4 [S6] Interface. Route: inline.
@@ -46,3 +46,12 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - Supabase Free plan: 500 MB database, 50,000 monthly active users. A project pauses after a week of low activity; Pro starts at 25 USD a month (supabase.com/pricing).
   - Supabase supports PKCE (`signInWithOAuth`, then `exchangeCodeForSession`). There is no official Electron loopback guide, and code-verifier storage is a known pitfall (supabase-js #1686). Hence F1 is a spike.
 - L6 The Engram mirror is pending: the project "narsil-proxy" is unknown to Engram (see mcp-bridge L4).
+- L7 (2026-11-27) F0 is done. The owner created the project, set up Google sign-in and the redirect URL, and asked where test users are added: under Google Auth Platform → Audience.
+- L8 F1 is built:
+  - `app/sharedAuth.ts`: PKCE through `signInWithOAuth` with `skipBrowserRedirect`, a loopback server on 47813, `exchangeCodeForSession`, and the session in the encrypted secret `shared-session`.
+  - `adapters/supabaseClient.ts` and `adapters/sharedConfigStore.ts` (`shared.json`).
+  - The Ajustes step "Listas compartidas" and the IPC calls `getSharedStatus`, `setSharedConfig`, `sharedSignIn` and `sharedSignOut`.
+  - The config check refuses `sb_secret_` and `service_role` keys.
+  - The project URL and key are not committed: the repository is public.
+- L9 Evidence: 13 new tests failed first (RED), then passed. 400 tests pass; typecheck, eslint and build are clean. Real sign-in by the owner, user: "Funcionó".
+- L10 Risk: item 2 (sign-in, a session token stored on disk) and item 5 (new dependency `@supabase/supabase-js` 2.119.2).
