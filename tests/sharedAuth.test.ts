@@ -44,18 +44,19 @@ function fakeClient(storage: SessionStorage, overrides: Partial<AuthClient> = {}
     }),
     exchangeCodeForSession: vi.fn(async (code: string) => {
       if (code !== 'good-code') return { data: { session: null }, error: { message: 'invalid code' } }
-      await storage.setItem('sb-auth', JSON.stringify({ user: { email: 'ana@gmail.com' } }))
-      return { data: { session: { user: { email: 'ana@gmail.com' } } }, error: null }
+      await storage.setItem('sb-auth', JSON.stringify({ user: { id: 'u-ana', email: 'ana@gmail.com' } }))
+      return { data: { session: { user: { id: 'u-ana', email: 'ana@gmail.com' } } }, error: null }
     }),
     getSession: vi.fn(async () => {
       const raw = await storage.getItem('sb-auth')
-      return { data: { session: raw ? (JSON.parse(raw) as { user: { email: string } }) : null } }
+      return { data: { session: raw ? (JSON.parse(raw) as { user: { id: string; email: string } }) : null }, error: null }
     }),
     signOut: vi.fn(async () => {
       await storage.removeItem('sb-auth')
       return { error: null }
     }),
     stopAutoRefresh: vi.fn(async () => undefined),
+    select: vi.fn(async (table: string) => ({ data: [{ table }], error: null })),
     ...overrides
   }
   return client
@@ -218,5 +219,35 @@ describe('SharedAuth', () => {
     expect(status).toEqual({ configured: true, projectUrl: 'https://zyxwvutsrqponmlk.supabase.co' })
     expect(old?.stopAutoRefresh).toHaveBeenCalled()
     expect(secrets.get('shared-session')).toBeNull()
+  })
+
+  it('hands the sync the signed-in user and a way to read rows with their session', async () => {
+    const { auth, client } = setup('?code=good-code')
+    await auth.signIn()
+    const session = await auth.session()
+    expect(session).toMatchObject({ id: 'u-ana', email: 'ana@gmail.com' })
+    expect(await session?.select('lists', 'id')).toEqual({ data: [{ table: 'lists' }], error: null })
+    expect(client()?.select).toHaveBeenCalledWith('lists', 'id')
+  })
+
+  it('has no session before a project is saved or after signing out', async () => {
+    expect(await setup(null, { config: null }).auth.session()).toBeNull()
+    const { auth } = setup('?code=good-code')
+    await auth.signIn()
+    await auth.signOut()
+    expect(await auth.session()).toBeNull()
+  })
+
+  it('lowercases the email, as the database stores it', async () => {
+    const session = { user: { id: 'u-ana', email: 'Ana@Gmail.com' } }
+    const { auth } = setup(null, { overrides: { getSession: async () => ({ data: { session }, error: null }) } })
+    expect((await auth.session())?.email).toBe('ana@gmail.com')
+  })
+
+  it('fails, instead of reporting a sign-out, when the session cannot be read', async () => {
+    const { auth } = setup(null, {
+      overrides: { getSession: async () => ({ data: { session: null }, error: { message: 'TypeError: fetch failed' } }) }
+    })
+    await expect(auth.session()).rejects.toThrow('TypeError: fetch failed')
   })
 })

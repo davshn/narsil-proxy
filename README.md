@@ -198,7 +198,7 @@ Tasks are stored on this computer only, as plain JSON in `%APPDATA%\narsil-proxy
 
 ### Shared lists (in progress)
 
-Shared lists let Narsil users give each other tasks. They live in a [Supabase](https://supabase.com) project, apart from your personal Pendientes, which stay on this computer. So far Narsil signs you in and the database holds the lists and their rules; the screens for them come next.
+Shared lists let Narsil users give each other tasks. They live in a [Supabase](https://supabase.com) project, apart from your personal Pendientes, which stay on this computer. So far Narsil signs you in, the database holds the lists and their rules, and Narsil keeps a synced copy; the screens for them come next.
 
 **One-time setup (the project owner)**
 
@@ -245,6 +245,14 @@ In **Ajustes → Listas compartidas**, paste the project URL and its **public** 
 **Iniciar sesión con Google** opens your browser and comes back to Narsil on port 47813 through OAuth PKCE. If another sign-in holds that port, close it first.
 
 The session is encrypted under `secrets/shared-session.bin` and survives restarts. The project URL and key are saved in `shared.json`. Saving another project signs you out of the previous one.
+
+**Syncing**
+
+While you are signed in, Narsil reads your shared lists every 10 seconds. It also reads them right after you sign in and when you bring its window back. It polls instead of using Supabase Realtime, which needs no extra database setup and never sends you events about rows you cannot see.
+
+The last copy is kept in `shared-cache.json`, so the lists still show while you are offline. Signing out deletes it. When someone else assigns you a task, or reassigns one to you, Windows shows "*Name* te asignó una tarea" with the task and its list. Several at once arrive as one notification, "N tareas nuevas para ti".
+
+If you signed in before the tables existed, apply every migration, including `…_backfill_profiles.sql`: it creates the profile that account is missing.
 
 ### Inbox settings
 

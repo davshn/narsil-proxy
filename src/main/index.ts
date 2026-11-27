@@ -25,9 +25,11 @@ import { AccountRegistry, AccountSettingsSchema, migrateLegacyGoogleTokens } fro
 import { RulesFileStore } from './adapters/rulesStore'
 import { TasksFileStore } from './adapters/tasksStore'
 import { McpPipeServer } from './adapters/mcpPipe'
+import { SharedCacheFileStore } from './adapters/sharedCacheStore'
 import { SharedConfigFileStore } from './adapters/sharedConfigStore'
 import { makeSupabaseAuth } from './adapters/supabaseClient'
 import { SharedAuth } from './app/sharedAuth'
+import { SharedSync, type SharedAssignment } from './app/sharedSync'
 import { createMcpHandlers } from './app/mcpTools'
 import { mcpDiscoveryFile } from '../mcp/protocol'
 import { MAX_TASK_DESCRIPTION, MAX_TASK_NAME, MAX_TASK_PROJECT, TaskList } from './app/tasks'
@@ -42,6 +44,7 @@ let win: BrowserWindow | null = null
 let tray: Tray | null = null
 let service: NarsilService | null = null
 let mcp: McpPipeServer | null = null
+let sharedSync: SharedSync | null = null
 
 function send(channel: string, payload: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
@@ -213,6 +216,37 @@ function notifyNewEmails(items: InboxItem[], accounts: Account[]): void {
   notification.on('click', () => {
     release()
     focusEmail(key)
+  })
+  notification.on('close', release)
+  notification.show()
+}
+
+/** One notification per sync: the task when one was assigned, a count when several were. */
+function notifyAssignments(items: SharedAssignment[]): void {
+  const [first] = items
+  if (!first) return
+  let title: string
+  let body: string
+  if (items.length === 1) {
+    // Plain concatenation: names come from other people and never go through markup.
+    title = truncate((first.by?.name || first.by?.email || 'Alguien') + ' te asignó una tarea', MAX_TITLE)
+    body = first.task.name + (first.list ? '\n' + first.list.name : '')
+  } else {
+    title = `${items.length} tareas nuevas para ti`
+    body = items
+      .slice(0, MAX_GROUP_SUBJECTS)
+      .map((item) => item.task.name)
+      .join('\n')
+  }
+  const notification = new Notification({ title, body, icon: notificationIcon() })
+  liveNotifications.add(notification)
+  const release = (): void => void liveNotifications.delete(notification)
+  notification.on('click', () => {
+    release()
+    if (!win || win.isDestroyed()) return
+    win.show()
+    win.focus()
+    placeWindow(EXPANDED)
   })
   notification.on('close', release)
   notification.show()
@@ -390,13 +424,21 @@ async function sharedResult(shared: SharedAuth, change: () => Promise<SharedStat
   }
 }
 
-function registerSharedIpc(shared: SharedAuth): void {
+function registerSharedIpc(shared: SharedAuth, sync: SharedSync): void {
+  // Signing in or out, or another project, changes what the lists show: sync at once.
+  const thenSync = async (change: () => Promise<SharedStatus>): Promise<SharedStatus> => {
+    const status = await change()
+    void sync.refresh()
+    return status
+  }
   ipcMain.handle(IPC.getSharedStatus, () => sharedResult(shared, () => shared.status()))
   ipcMain.handle(IPC.setSharedConfig, (_e, url: unknown, key: unknown) =>
-    sharedResult(shared, () => shared.setConfig(z.string().max(300).parse(url), z.string().max(500).parse(key)))
+    sharedResult(shared, () => thenSync(() => shared.setConfig(z.string().max(300).parse(url), z.string().max(500).parse(key))))
   )
-  ipcMain.handle(IPC.sharedSignIn, () => sharedResult(shared, () => shared.signIn()))
-  ipcMain.handle(IPC.sharedSignOut, () => sharedResult(shared, () => shared.signOut()))
+  ipcMain.handle(IPC.sharedSignIn, () => sharedResult(shared, () => thenSync(() => shared.signIn())))
+  ipcMain.handle(IPC.sharedSignOut, () => sharedResult(shared, () => thenSync(() => shared.signOut())))
+  ipcMain.handle(IPC.getSharedState, () => sync.state())
+  ipcMain.handle(IPC.refreshShared, () => sync.refresh())
 }
 
 /** Lets Claude reach this Narsil through the MCP bridge (out/main/mcp.js). */
@@ -461,14 +503,22 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc(service)
     const tasks = new TaskList(new TasksFileStore())
     registerTaskIpc(tasks)
-    registerSharedIpc(
-      new SharedAuth({
-        configs: new SharedConfigFileStore(),
-        secrets: store,
-        makeClient: makeSupabaseAuth,
-        openBrowser: (url) => shell.openExternal(url)
-      })
-    )
+    const shared = new SharedAuth({
+      configs: new SharedConfigFileStore(),
+      secrets: store,
+      makeClient: makeSupabaseAuth,
+      openBrowser: (url) => shell.openExternal(url)
+    })
+    sharedSync = new SharedSync({
+      source: shared,
+      cache: new SharedCacheFileStore(),
+      changed: (state) => send(IPC.sharedChanged, state),
+      assigned: notifyAssignments
+    })
+    registerSharedIpc(shared, sharedSync)
+    sharedSync.start()
+    // Coming back to the window shows the latest without waiting for the next poll.
+    win?.on('focus', () => void sharedSync?.refresh())
     service.start()
     startMcp(service, tasks)
   })
@@ -477,6 +527,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => undefined)
   app.on('before-quit', () => {
     service?.stop()
+    sharedSync?.stop()
     void mcp?.stop()
   })
 }

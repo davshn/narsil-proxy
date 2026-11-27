@@ -247,6 +247,64 @@ export interface SharedStatus {
 export const TASK_STATUSES = ['todo', 'started', 'in-progress', 'paused', 'done'] as const
 export type TaskStatus = (typeof TASK_STATUSES)[number]
 
+/** Someone the user shares a list with, or the owner of a list they were invited to. */
+export interface SharedPerson {
+  id: string
+  email: string
+  /** Empty until the person sets a name. */
+  name: string
+}
+
+export interface SharedList {
+  id: string
+  name: string
+  ownerId: string
+  createdAt: string
+  /** False while the list is only an invitation the user has not answered. */
+  accepted: boolean
+}
+
+export interface SharedMember {
+  listId: string
+  email: string
+  addedAt: string
+  /** Null while the invitation waits. */
+  acceptedAt: string | null
+}
+
+export interface SharedTask {
+  id: string
+  listId: string
+  name: string
+  description: string
+  status: TaskStatus
+  /** Null when nobody is assigned. */
+  assigneeEmail: string | null
+  /** Profile ids; `updatedBy` is null when that person's account is gone. */
+  createdBy: string
+  createdAt: string
+  updatedBy: string | null
+  updatedAt: string
+}
+
+/** Everything the signed-in user can read from the shared lists, as of `syncedAt`. */
+export interface SharedSnapshot {
+  userId: string
+  email: string
+  people: SharedPerson[]
+  lists: SharedList[]
+  members: SharedMember[]
+  tasks: SharedTask[]
+  syncedAt: string
+}
+
+/** The shared lists as Narsil last read them; `error` says why the latest sync failed. */
+export interface SharedState {
+  signedIn: boolean
+  snapshot: SharedSnapshot | null
+  error?: string
+}
+
 /** A to-do the user wrote down in "Pendientes". Stored locally; never sent anywhere. */
 export interface PendingTask {
   id: string
@@ -336,6 +394,11 @@ export interface NarsilApi {
   /** Opens the browser to sign in with Google and waits for it to come back. */
   sharedSignIn(): Promise<SharedResult>
   sharedSignOut(): Promise<SharedResult>
+  /** The shared lists as last synced, from the local copy when offline. */
+  getSharedState(): Promise<SharedState>
+  /** Syncs now instead of waiting for the next poll. */
+  refreshShared(): Promise<SharedState>
+  onSharedChanged(listener: (state: SharedState) => void): () => void
   onServerRulesChanged(listener: (rules: AccountRules[]) => void): () => void
   onRulesChanged(listener: (rules: Rule[]) => void): () => void
   /** Tasks changed outside the window, through the MCP bridge. */
@@ -384,6 +447,9 @@ export const IPC = {
   setSharedConfig: 'narsil:set-shared-config',
   sharedSignIn: 'narsil:shared-sign-in',
   sharedSignOut: 'narsil:shared-sign-out',
+  getSharedState: 'narsil:get-shared-state',
+  refreshShared: 'narsil:refresh-shared',
+  sharedChanged: 'narsil:shared-changed',
   serverRulesChanged: 'narsil:server-rules-changed',
   rulesChanged: 'narsil:rules-changed',
   tasksChanged: 'narsil:tasks-changed',

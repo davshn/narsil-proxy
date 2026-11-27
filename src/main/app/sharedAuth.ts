@@ -33,10 +33,27 @@ export interface SessionStorage {
 }
 
 interface Session {
-  user: { email?: string | null }
+  user: { id: string; email?: string | null }
 }
 
-/** The part of Supabase's auth client Narsil uses. */
+/** The tables of the shared lists; the database's row level security decides which rows come back. */
+export type SharedTable = 'profiles' | 'lists' | 'list_members' | 'shared_tasks'
+
+/** Reads every row of a table the signed-in user may see, as PostgREST answers. */
+export type SelectRows = (
+  table: SharedTable,
+  columns: string
+) => Promise<{ data: unknown[] | null; error: { message: string } | null }>
+
+/** The signed-in user, and a way to read rows with their session. */
+export interface SharedSession {
+  id: string
+  /** Lowercase, as the database keeps it. */
+  email: string
+  select: SelectRows
+}
+
+/** The part of Supabase's client Narsil uses: auth, and reading rows with the session. */
 export interface AuthClient {
   signInWithOAuth(credentials: {
     provider: 'google'
@@ -46,10 +63,12 @@ export interface AuthClient {
     code: string,
     options?: { flowId: string }
   ): Promise<{ data: { session: Session | null }; error: { message: string } | null }>
-  getSession(): Promise<{ data: { session: Session | null } }>
+  /** An error means the session could not be read or refreshed, which is not the same as signed out. */
+  getSession(): Promise<{ data: { session: Session | null }; error?: { message: string } | null }>
   signOut(options: { scope: 'local' }): Promise<{ error: { message: string } | null }>
   /** Stops the background token refresh of a client Narsil no longer uses. */
   stopAutoRefresh(): Promise<void>
+  select: SelectRows
 }
 
 export interface SharedAuthDeps {
@@ -138,6 +157,21 @@ export class SharedAuth {
     const { data } = await this.auth(config).getSession()
     const email = data.session?.user.email
     return { configured: true, projectUrl: config.url, ...(email ? { email } : {}) }
+  }
+
+  /**
+   * The signed-in user, or null when nobody is signed in. Throws when the session exists but
+   * cannot be read, as when its refresh cannot reach Supabase, so a sync keeps what it has.
+   */
+  async session(): Promise<SharedSession | null> {
+    const config = this.deps.configs.load()
+    if (!config) return null
+    const auth = this.auth(config)
+    const { data, error } = await auth.getSession()
+    if (error) throw new Error(error.message)
+    const user = data.session?.user
+    if (!user?.email) return null
+    return { id: user.id, email: user.email.toLowerCase(), select: (table, columns) => auth.select(table, columns) }
   }
 
   /** Saves the project; a session from another project means nothing here, so it is dropped. */
