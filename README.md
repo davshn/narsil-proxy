@@ -204,8 +204,17 @@ What Claude can do:
 | `save_task` | Adds a task, or edits one. |
 | `set_task_status` | Changes a task's status. |
 | `delete_task` | Deletes a task. Marked destructive, so Claude asks first. |
+| `archive_email` | Archives an email from the list. Marked destructive. |
+| `delete_email` | Moves an email from the list to the trash. Marked destructive. |
+| `move_email` | Moves an email to a label or folder of its account. Marked destructive. |
+| `reply_email` | Sends a reply from the account that received the email. Marked destructive. |
+| `create_meeting` | Adds a meeting to an account's calendar. |
+| `create_rule` | Creates a local Narsil rule. It also acts on the current list right away. Marked destructive. |
+| `create_server_rule` | Creates a Gmail filter or an Outlook inbox rule in one account. It also acts on the current list right away. Marked destructive. |
 
-Claude cannot send, archive, delete or move mail, create meetings or rules, or touch accounts and keys. Changes Claude makes in Pendientes show up in the open window right away.
+Claude cannot edit or delete rules, and cannot touch accounts, keys or settings. Whatever Claude does shows up in the open window right away.
+
+Narsil does not ask again before a mail action. The only confirmation is Claude's own permission prompt for tools marked destructive. Email text comes from outside senders, and a malicious email could try to talk Claude into sending or deleting mail. Do not choose "always allow" for any tool marked destructive.
 
 **Setup**
 

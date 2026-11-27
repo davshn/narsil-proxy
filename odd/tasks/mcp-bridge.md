@@ -1,7 +1,7 @@
 # MCP bridge: Claude can use Narsil's features
 
-Objective: Claude (Desktop or Code) connects to the running Narsil through MCP. Phase 1 covers queries and Pendientes; mail actions are phase 2.
-Branch: feat/mcp-bridge. Delivery: ask-on-risk (forecast about 600 authored lines). Test runner: `npm test`, `npm run typecheck`, `npm run build`.
+Objective: Claude (Desktop or Code) connects to the running Narsil through MCP. Phase 1 (merged in davshn/narsil-proxy#2) covers queries and Pendientes; phase 2 adds mail actions, meetings and rules.
+Branch: feat/mcp-bridge (phase 1), feat/mcp-mail-actions (phase 2). Delivery: ask-on-risk. Test runner: `npm test`, `npm run typecheck`, `npm run build`.
 
 ## Specs
 
@@ -19,6 +19,17 @@ Branch: feat/mcp-bridge. Delivery: ask-on-risk (forecast about 600 authored line
   - Tools carry MCP annotations: queries are `readOnlyHint`, and `delete_task` is `destructiveHint`.
 - S5: (assumption, needed for S2 to be visible) when Claude changes a task, the open Pendientes tab updates without reopening it.
 - S6: The README explains how to add the bridge to Claude Desktop and Claude Code.
+- S7: Phase 2 tools, as proposed and accepted ("Sí, hazlo así."):
+  - "Archivar, eliminar y mover correos a una carpeta."
+  - "Responder correos, usando los borradores de la clasificación o un texto propio."
+  - "Crear reuniones en el calendario."
+  - "Crear reglas, locales o de Gmail y Outlook."
+  - Each tool calls the existing `NarsilService` method, which already validates and updates the window: `applyAction`, `sendReply`, `createMeeting`, `saveRule`, `saveServerRule`. Rules are create-only; editing and deleting rules were not requested.
+- S8: Safety, as accepted: "excepto por la confirmación dentro del Narsil. Creo que no es necesaria."
+  - There is no confirmation inside Narsil.
+  - Mail actions (archive, delete, move, reply) and rule creation carry `destructiveHint`, so Claude asks for each use.
+  - S3 still holds: accounts, keys and client IDs stay out.
+- S9: The README lists the phase 2 tools and says that Claude's permission prompt is the only confirmation.
 
 ## Tasks
 
@@ -26,6 +37,8 @@ Branch: feat/mcp-bridge. Delivery: ask-on-risk (forecast about 600 authored line
 - [x] T2 [S2, S3, S5] Tool handlers in the app and the tasks-changed event to the renderer. Route: inline. Commit: C1.
 - [x] T3 [S1, S2] Stdio bridge with `@modelcontextprotocol/sdk` 1.32.2 and its build entry. Route: inline. Commit: C2.
 - [x] T4 [S6] README and an end-to-end check with a real MCP client against the running app. Route: inline. Commit: C2.
+- [x] T5 [S7, S8] Phase 2 tools in protocol.ts and handlers in mcpTools.ts, with tests. Route: inline (one unit, no writer reason).
+- [x] T6 [S9] README. Route: inline.
 
 ## Log
 
@@ -59,3 +72,27 @@ Branch: feat/mcp-bridge. Delivery: ask-on-risk (forecast about 600 authored line
   - Regression tests failed without the fix and pass with it; the suite has 352 passing.
 - L10 Not fixed: finding 3. A real check needs `GetNamedPipeServerProcessId` (native code), and the attack needs another local user plus a Narsil crash.
 - L10 The `save_task` description no longer claims that projects match ignoring case.
+- L11 Fix committed as e544347.
+- L11 Native review: the user granted consent for lineage review-4135166a19fb9064 (lenses: risk, resilience, reliability).
+- L11 All three captures failed in preflight with no mutation. The `claude` CLI that runs the reviewer reported: "OAuth session expired and could not be refreshed".
+- L11 STATUS re-offers the same three slots. Review is pending until the user signs in to the Claude CLI again.
+- L12 (2026-11-27) User: "¿Nos queda una fase 2 de esa tarea? ¿O ya terminamos?"
+- L12 The parent listed phase 2. User: "Sí, hazlo así." Then: "Espera, hazlo así, excepto por la confirmación dentro del Narsil. Creo que no es necesaria."
+- L12 The parent noted the tradeoff once: if the user picks "always allow" in Claude for send or delete, a malicious email could trigger those actions unseen.
+- L13 RED: 11 new mcpTools tests and the bridge annotations test failed before the implementation. GREEN: `npm test` 363 passed; typecheck, eslint and build clean.
+- L13 End to end against the running Narsil, error paths only, so no real mail, calendar or rule changed:
+  - 16 tools are listed, and 7 are marked destructive.
+  - An unknown key gives "Este correo ya no está en la lista.".
+  - A blank reply is refused by the schema.
+  - An end before the start gives "La hora de fin debe ser posterior a la de inicio.".
+  - A rule without conditions gives "Agrega al menos una condición." (local and server).
+  - An unknown account gives "Esta cuenta ya no está conectada.".
+- L13 Not run: the success path on real mail, by design. Claude Desktop keeps the old bridge process until it restarts.
+- L13 Risk: item 2. Mail-changing actions are now reachable through the token-guarded pipe, with Claude's permission prompt as the only confirmation.
+- L14 Independent verifier (phase 2): S7, S8 and S9 PASS, S2-S4 still hold, no blockers; it observed 363 tests and the typecheck passing. It reported four minor findings:
+  1. The server instructions still said "read".
+  2. The docs did not say that `create_server_rule` acts on the current list.
+  3. The reply body was trimmed before sending.
+  4. Confirm wording was uneven across the destructive tools.
+- L14 All four are fixed. Regression tests (an untouched reply body, confirm wording on every destructive tool, the instructions) failed first. GREEN: 364 tests.
+- L14 Unverified premise: whether a Claude client honors `destructiveHint` per use is client behavior.

@@ -4,8 +4,21 @@ import type { PendingTask } from '@shared/types'
 import type { NarsilService } from './narsilService'
 import type { TaskList } from './tasks'
 
-/** What the bridge may read from the service: no accounts, credentials or mail actions. */
-export type McpServiceView = Pick<NarsilService, 'status' | 'inboxItems' | 'upcomingMeetings' | 'rules' | 'serverRules' | 'listFolders'>
+/** What the bridge may use of the service: never accounts, credentials or settings. */
+export type McpServiceView = Pick<
+  NarsilService,
+  | 'status'
+  | 'inboxItems'
+  | 'upcomingMeetings'
+  | 'rules'
+  | 'serverRules'
+  | 'listFolders'
+  | 'applyAction'
+  | 'sendReply'
+  | 'createMeeting'
+  | 'saveRule'
+  | 'saveServerRule'
+>
 
 export interface McpToolDeps {
   service: McpServiceView
@@ -97,6 +110,54 @@ export function createMcpHandlers({ service, tasks, tasksChanged }: McpToolDeps)
       const { id } = parse('delete_task', args)
       tasksChanged(tasks.remove(id))
       return { deleted: id }
+    },
+    // The service validates each action again and updates the window itself.
+    archive_email: async (args) => {
+      const { key } = parse('archive_email', args)
+      await service.applyAction(key, 'archive', undefined)
+      return { archived: key }
+    },
+    delete_email: async (args) => {
+      const { key } = parse('delete_email', args)
+      await service.applyAction(key, 'delete', undefined)
+      return { deleted: key }
+    },
+    move_email: async (args) => {
+      const { key, folderId } = parse('move_email', args)
+      await service.applyAction(key, 'save', folderId)
+      return { moved: key, folderId }
+    },
+    reply_email: async (args) => {
+      const { key, body } = parse('reply_email', args)
+      await service.sendReply(key, body)
+      return { replied: key }
+    },
+    create_meeting: async (args) => {
+      const { accountId, ...meeting } = parse('create_meeting', args)
+      return service.createMeeting(accountId, meeting)
+    },
+    create_rule: async (args) => {
+      const { name, from, subject, body, action, folder } = parse('create_rule', args)
+      await service.saveRule({ name, enabled: true, conditions: conditions(from, subject, body), action, ...(folder ? { folder } : {}) })
+      return { localRules: service.rules() }
+    },
+    create_server_rule: async (args) => {
+      const { accountId, name, from, subject, body, action, folderId, folderName } = parse('create_server_rule', args)
+      await service.saveServerRule({
+        accountId,
+        name,
+        conditions: conditions(from, subject, body),
+        action,
+        ...(folderId ? { folderId } : {}),
+        ...(folderName ? { folderName } : {})
+      })
+      const group = service.serverRules().find((g) => g.accountId === accountId)
+      return group ? { ...group, account: emailOf(accountId) } : { accountId, account: emailOf(accountId) }
     }
   }
+}
+
+/** A condition left out means "no condition on that field". */
+function conditions(from = '', subject = '', body = ''): { from: string; subject: string; body: string } {
+  return { from, subject, body }
 }

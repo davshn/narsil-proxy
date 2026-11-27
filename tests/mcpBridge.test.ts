@@ -47,7 +47,12 @@ async function connectClient(withNarsil: boolean): Promise<{ client: Client; rep
       upcomingMeetings: () => [],
       rules: () => [],
       serverRules: () => [],
-      listFolders: async () => []
+      listFolders: async () => [],
+      applyAction: async () => undefined,
+      sendReply: async () => undefined,
+      createMeeting: async () => Promise.reject(new Error('unused')),
+      saveRule: async () => undefined,
+      saveServerRule: async () => undefined
     }
     pipe = new McpPipeServer(createMcpHandlers({ service, tasks, tasksChanged: () => undefined }), { file })
     await pipe.start()
@@ -62,13 +67,22 @@ async function connectClient(withNarsil: boolean): Promise<{ client: Client; rep
 const text = (result: Awaited<ReturnType<Client['callTool']>>): string => (result.content as { text: string }[])[0]?.text ?? ''
 
 describe('the MCP bridge', () => {
-  it('advertises every phase 1 tool with its annotations, and nothing else', async () => {
+  it('advertises every tool with its annotations, and nothing about accounts or keys', async () => {
     const { client } = await connectClient(false)
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual([...MCP_TOOL_NAMES].sort())
     expect(tools.find((t) => t.name === 'get_inbox')?.annotations?.readOnlyHint).toBe(true)
     expect(tools.find((t) => t.name === 'delete_task')?.annotations?.destructiveHint).toBe(true)
-    expect(tools.some((t) => /reply|archive|account|key/i.test(t.name))).toBe(false)
+    for (const name of ['archive_email', 'delete_email', 'move_email', 'reply_email', 'create_rule', 'create_server_rule']) {
+      expect(tools.find((t) => t.name === name)?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
+    }
+    expect(tools.find((t) => t.name === 'create_meeting')?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false })
+    expect(tools.some((t) => /account|key|client|setting/i.test(t.name))).toBe(false)
+    // Every tool that changes mail or rules tells the model to ask the user first.
+    for (const tool of tools.filter((t) => t.annotations?.destructiveHint)) {
+      expect(tool.description, tool.name).toMatch(/Confirm with the user first/)
+    }
+    expect(client.getInstructions()).toMatch(/send, archive, delete and move mail/)
   })
 
   it('creates a task in Narsil and returns it as JSON', async () => {
