@@ -32,6 +32,7 @@ import { makeSupabaseAuth } from './adapters/supabaseClient'
 import { SharedAuth } from './app/sharedAuth'
 import { SharedSync, type SharedAssignment, type SharedInvitation } from './app/sharedSync'
 import { SharedActionSchema, SharedLists } from './app/sharedLists'
+import type { SharedMcpDeps } from './app/mcpSharedTools'
 import { createMcpHandlers } from './app/mcpTools'
 import { mcpDiscoveryFile } from '../mcp/protocol'
 import { MAX_TASK_DESCRIPTION, MAX_TASK_NAME, MAX_TASK_PROJECT, TaskList } from './app/tasks'
@@ -462,8 +463,8 @@ function registerSharedIpc(shared: SharedAuth, sync: SharedSync, lists: SharedLi
 }
 
 /** Lets Claude reach this Narsil through the MCP bridge (out/main/mcp.js). */
-function startMcp(svc: NarsilService, tasks: TaskList): void {
-  const server = new McpPipeServer(createMcpHandlers({ service: svc, tasks, tasksChanged: (list) => send(IPC.tasksChanged, list) }), {
+function startMcp(svc: NarsilService, tasks: TaskList, shared: SharedMcpDeps): void {
+  const server = new McpPipeServer(createMcpHandlers({ service: svc, tasks, tasksChanged: (list) => send(IPC.tasksChanged, list), shared }), {
     file: mcpDiscoveryFile(process.env, homedir())
   })
   server.start().then(
@@ -536,12 +537,14 @@ if (!app.requestSingleInstanceLock()) {
       assigned: notifyAssignments,
       invited: notifyInvitations
     })
-    registerSharedIpc(shared, sharedSync, new SharedLists({ source: shared, sync: sharedSync }))
+    const sharedLists = new SharedLists({ source: shared, sync: sharedSync })
+    registerSharedIpc(shared, sharedSync, sharedLists)
     sharedSync.start()
     // Coming back to the window shows the latest without waiting for the next poll.
     win?.on('focus', () => void sharedSync?.refresh())
     service.start()
-    startMcp(service, tasks)
+    const sync = sharedSync
+    startMcp(service, tasks, { apply: (action) => sharedLists.apply(action), refresh: () => sync.refresh(), state: () => sync.state() })
   })
 
   // Narsil lives in the tray; closing the window does not quit it.

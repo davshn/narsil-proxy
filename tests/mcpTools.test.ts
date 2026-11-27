@@ -61,7 +61,7 @@ function setup(): { handlers: ReturnType<typeof createMcpHandlers>; repo: Memory
     saveServerRule: vi.fn(async () => undefined)
   }
   const changed = vi.fn()
-  return { handlers: createMcpHandlers({ service, tasks, tasksChanged: changed }), repo, changed, service }
+  return { handlers: createMcpHandlers({ service, tasks, tasksChanged: changed, shared: { apply: async () => ({ ok: true, state: { signedIn: false, snapshot: null } }), refresh: async () => ({ signedIn: false, snapshot: null }), state: () => ({ signedIn: false, snapshot: null }) } }), repo, changed, service }
 }
 
 describe('createMcpHandlers', () => {

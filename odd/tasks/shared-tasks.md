@@ -36,7 +36,7 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
 - [x] F2 [S3, S4] Schema, migrations and row level security with policy tests on a local Supabase. Route: inline. Risk: item 2 (security), so it gets an independent verifier and review. Commits: 6f359b0, 334e78c, 6910727, 3b09979 (PR #8, merged; applied to the real project on 2026-11-27).
 - [x] F3 [S5] Sync adapter: polling every 10 seconds, local cache, notification on assignment. Route: inline. Branch: `feat/shared-sync`. Risk: none. Evidence: L24-L25.
 - [x] F4 [S6] Interface. Route: inline. Branch: `feat/shared-ui`. Risk: none. Evidence: L26.
-- [ ] F5 [S7] MCP tools. Route: inline.
+- [x] F5 [S7] MCP tools. Route: inline. Branch: `feat/shared-mcp`. Risk: none. Evidence: L29.
 - [ ] F6 [S8] Docs and a two-account end-to-end test. Route: inline.
 
 ## Log
@@ -130,3 +130,9 @@ Branch: one branch and one pull request per phase (`feat/shared-tasks` for F0-F1
   - Full suite 447/447, typecheck and build pass. After a restart Narsil kept syncing. Not checked on screen: the desktop approval was not available over Remote Control, so the owner checks the screens.
 - L27 (2026-11-27) User asked whether an invitation sends an email. It does not: it only adds a member row, which the invited person sees after signing in. User: "Sí, agrégalo" to a desktop notification on new invitations (S5).
 - L28 (2026-11-27) Invitation notifications built test first. RED: 1 of 3 new sync tests failed. GREEN: 450/450, typecheck and build pass. A new invitation is reported only against a previous copy of the same user, never on a first sync, and never again once reported or accepted.
+- L29 (2026-11-27) F5 built test first. RED: the shared MCP suite could not import its module. GREEN: 15 tests; full suite 465/465, typecheck and build pass.
+  - 11 tools (27 in all). They call the same `SharedLists.apply` and sync as the screens, so they act with the user's session.
+  - Assigning by name matches the accepted members by email, full name or first name, ignoring case and accents. An ambiguous or unknown name fails and lists the candidates, so Claude asks the user.
+  - The deleting tools are marked destructive and say "Confirm with the user first."
+  - The tool argument parser moved to `protocol.ts` (`parseToolArgs`) so both handler modules share it.
+  - Live check through the real bridge against the real project: the bridge listed 27 tools; then Claude's calls created "Prueba MCP", refused an unknown assignee, added a task assigned by email, set it in progress, and deleted the task and the list. The project was left with 0 lists.
