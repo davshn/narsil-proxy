@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, screen, shell } from 'electron'
 import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { themeAt } from '@shared/dayNight'
@@ -20,6 +21,9 @@ import { MAX_MEETING_LOCATION, MAX_MEETING_TITLE, NarsilService, type NarsilEven
 import { AccountRegistry, AccountSettingsSchema, migrateLegacyGoogleTokens } from './app/accounts'
 import { RulesFileStore } from './adapters/rulesStore'
 import { TasksFileStore } from './adapters/tasksStore'
+import { McpPipeServer } from './adapters/mcpPipe'
+import { createMcpHandlers } from './app/mcpTools'
+import { mcpDiscoveryFile } from '../mcp/protocol'
 import { MAX_TASK_DESCRIPTION, MAX_TASK_NAME, MAX_TASK_PROJECT, TaskList } from './app/tasks'
 import { GoogleProvider } from './adapters/google/provider'
 import { MicrosoftProvider } from './adapters/microsoft/provider'
@@ -31,6 +35,7 @@ const MARGIN = 16
 let win: BrowserWindow | null = null
 let tray: Tray | null = null
 let service: NarsilService | null = null
+let mcp: McpPipeServer | null = null
 
 function send(channel: string, payload: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
@@ -360,6 +365,19 @@ function registerTaskIpc(tasks: TaskList): void {
   ipcMain.handle(IPC.deleteTask, (_e, id: unknown) => taskResult(tasks, () => tasks.remove(TaskId.parse(id))))
 }
 
+/** Lets Claude reach this Narsil through the MCP bridge (out/main/mcp.js). */
+function startMcp(svc: NarsilService, tasks: TaskList): void {
+  const server = new McpPipeServer(createMcpHandlers({ service: svc, tasks, tasksChanged: (list) => send(IPC.tasksChanged, list) }), {
+    file: mcpDiscoveryFile(process.env, homedir())
+  })
+  server.start().then(
+    () => {
+      mcp = server
+    },
+    (error: unknown) => console.error('Narsil could not open the MCP pipe:', error)
+  )
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -403,11 +421,16 @@ if (!app.requestSingleInstanceLock()) {
       }
     })
     registerIpc(service)
-    registerTaskIpc(new TaskList(new TasksFileStore()))
+    const tasks = new TaskList(new TasksFileStore())
+    registerTaskIpc(tasks)
     service.start()
+    startMcp(service, tasks)
   })
 
   // Narsil lives in the tray; closing the window does not quit it.
   app.on('window-all-closed', () => undefined)
-  app.on('before-quit', () => service?.stop())
+  app.on('before-quit', () => {
+    service?.stop()
+    void mcp?.stop()
+  })
 }

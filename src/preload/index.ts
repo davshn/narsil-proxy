@@ -40,6 +40,7 @@ const api: NarsilApi = {
   deleteTask: (id) => ipcRenderer.invoke(IPC.deleteTask, id),
   onServerRulesChanged: (listener) => subscribe(IPC.serverRulesChanged, listener),
   onRulesChanged: (listener) => subscribe(IPC.rulesChanged, listener),
+  onTasksChanged: (listener) => subscribe(IPC.tasksChanged, listener),
   onRuleActivityChanged: (listener) => subscribe(IPC.ruleActivityChanged, listener),
   onInboxChanged: (listener) => subscribe(IPC.inboxChanged, listener),
   onMeetingsChanged: (listener) => subscribe(IPC.meetingsChanged, listener),

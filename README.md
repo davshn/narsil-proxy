@@ -187,9 +187,55 @@ This is fast polling, not true push. Push needs a public HTTPS endpoint that Mic
 
 Narsil checks each inbox for changes every 15 seconds, reads the full unread list every minute, and reads the calendars every 5 minutes. Each account is checked on its own, so a problem with one account shows an error that starts with its address while the others keep working. Reminders cover timed events on each account's main calendar in the next 24 hours. All-day, cancelled and declined events are skipped. If Narsil starts less than 5 minutes before a meeting, you get only the 5-minute reminder.
 
+## Use Narsil from Claude (MCP)
+
+Claude Desktop and Claude Code can use Narsil through MCP. Claude starts a small bridge, `out/main/mcp.js`, which forwards each call to **the Narsil that is already open**. The bridge holds no credentials of its own: Narsil runs every call with the accounts it already has. If Narsil is closed, every tool answers that it is closed.
+
+What Claude can do:
+
+| Tool | What it does |
+| --- | --- |
+| `get_status` | Lists the connected accounts and the last error. |
+| `get_inbox` | Reads the mail Narsil is watching, with its triage. |
+| `get_meetings` | Lists the upcoming meetings. |
+| `get_rules` | Lists the local rules and each account's Gmail filters or Outlook rules. |
+| `list_folders` | Lists one account's labels or folders. |
+| `list_tasks` | Lists the tasks in Pendientes. |
+| `save_task` | Adds a task, or edits one. |
+| `set_task_status` | Changes a task's status. |
+| `delete_task` | Deletes a task. Marked destructive, so Claude asks first. |
+
+Claude cannot send, archive, delete or move mail, create meetings or rules, or touch accounts and keys. Changes Claude makes in Pendientes show up in the open window right away.
+
+**Setup**
+
+1. Build Narsil once with `npm run build` (`npm start` builds too), and keep Narsil open.
+2. Add the bridge to Claude, replacing `<repo>` with this folder's full path:
+   - **Claude Desktop:** edit `%APPDATA%\Claude\claude_desktop_config.json`, then restart Claude Desktop:
+
+     ```json
+     {
+       "mcpServers": {
+         "narsil": { "command": "node", "args": ["<repo>\\out\\main\\mcp.js"] }
+       }
+     }
+     ```
+
+   - **Claude Code:**
+
+     ```powershell
+     claude mcp add narsil --scope user -- node <repo>\out\main\mcp.js
+     ```
+
+**How the bridge finds Narsil**
+
+On every start, Narsil opens a named pipe with a random name. It then writes the pipe name and a random token to `%LOCALAPPDATA%\Narsil\mcp.json`, a folder only your Windows user can read. The bridge sends that token with every call, and Narsil refuses any call without it. When Narsil quits, it deletes the file.
+
 ## Claude usage and privacy
 
 Each new email's sender, subject, date and text (up to 12,000 characters) is sent to the Claude API (`claude-opus-5-5`, low effort) once. The system prompt is cached, so repeated calls are cheaper. Email content is treated as untrusted data: Claude only returns a summary, a recommendation and reply drafts, and cannot act on your mailbox.
+
+The MCP bridge is separate from that triage. When you use it, whatever a tool reads (for example the inbox with its snippets) goes to the Claude app you called it from, under that app's own privacy terms.
 
 The request opts into server-side refusal fallbacks (`fallbacks: "default"`), so if Claude's safety classifiers decline an email, the API retries it on Anthropic's recommended fallback model. Remove the `betas` and `fallbacks` lines in `src/main/adapters/claude.ts` to turn that off.
 
@@ -226,8 +272,11 @@ src/
     app/accounts.ts        The account list and the legacy Google account migration
     app/narsilService.ts   Polling every account, triage queue, rules and reminder scheduling
     app/tasks.ts           The Pendientes list and its validation
+    app/mcpTools.ts        What each MCP tool does inside Narsil
+    adapters/mcpPipe.ts    The named pipe the MCP bridge calls, with its token check
     index.ts               Window, tray, notifications and validated IPC handlers
   preload/index.ts         The narrow `window.narsil` bridge
+  mcp/                     The stdio MCP bridge (main.ts), its tool list (protocol.ts) and pipe client
   renderer/                React UI
 resources/                 App, tray and notification icons (copied next to the packaged app)
 tests/                     Vitest unit tests for the domain layer, providers and service
