@@ -89,3 +89,10 @@ Branch: feat/mcp-bridge (phase 1), feat/mcp-mail-actions (phase 2). Delivery: as
   - An unknown account gives "Esta cuenta ya no está conectada.".
 - L13 Not run: the success path on real mail, by design. Claude Desktop keeps the old bridge process until it restarts.
 - L13 Risk: item 2. Mail-changing actions are now reachable through the token-guarded pipe, with Claude's permission prompt as the only confirmation.
+- L14 Independent verifier (phase 2): S7, S8 and S9 PASS, S2-S4 still hold, no blockers; it observed 363 tests and the typecheck passing. It reported four minor findings:
+  1. The server instructions still said "read".
+  2. The docs did not say that `create_server_rule` acts on the current list.
+  3. The reply body was trimmed before sending.
+  4. Confirm wording was uneven across the destructive tools.
+- L14 All four are fixed. Regression tests (an untouched reply body, confirm wording on every destructive tool, the instructions) failed first. GREEN: 364 tests.
+- L14 Unverified premise: whether a Claude client honors `destructiveHint` per use is client behavior.

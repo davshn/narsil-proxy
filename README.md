@@ -210,11 +210,11 @@ What Claude can do:
 | `reply_email` | Sends a reply from the account that received the email. Marked destructive. |
 | `create_meeting` | Adds a meeting to an account's calendar. |
 | `create_rule` | Creates a local Narsil rule. It also acts on the current list right away. Marked destructive. |
-| `create_server_rule` | Creates a Gmail filter or an Outlook inbox rule in one account. Marked destructive. |
+| `create_server_rule` | Creates a Gmail filter or an Outlook inbox rule in one account. It also acts on the current list right away. Marked destructive. |
 
 Claude cannot edit or delete rules, and cannot touch accounts, keys or settings. Whatever Claude does shows up in the open window right away.
 
-Narsil does not ask again before a mail action. The only confirmation is Claude's own permission prompt for tools marked destructive. Email text comes from outside senders, and a malicious email could try to talk Claude into sending or deleting mail. Do not choose "always allow" for `reply_email`, `delete_email` or the rule tools.
+Narsil does not ask again before a mail action. The only confirmation is Claude's own permission prompt for tools marked destructive. Email text comes from outside senders, and a malicious email could try to talk Claude into sending or deleting mail. Do not choose "always allow" for any tool marked destructive.
 
 **Setup**
 

@@ -181,6 +181,15 @@ describe('mail actions through MCP', () => {
     expect(service.sendReply).toHaveBeenCalledWith('a1:m1', 'Gracias, la reviso hoy.')
   })
 
+  it('sends the reply text exactly as written, and refuses one that is only spaces', async () => {
+    const { handlers, service } = setup()
+    const body = '  Hola,\n\n  Ana\n'
+    await handlers.reply_email({ key: 'a1:m1', body })
+    expect(service.sendReply).toHaveBeenCalledWith('a1:m1', body)
+    await expect(handlers.reply_email({ key: 'a1:m1', body: '  \n ' })).rejects.toThrow()
+    expect(service.sendReply).toHaveBeenCalledTimes(1)
+  })
+
   it('passes the service error back, so Claude can read it', async () => {
     const { handlers, service } = setup()
     vi.mocked(service.applyAction).mockRejectedValueOnce(new Error('Este correo ya no está en la lista.'))

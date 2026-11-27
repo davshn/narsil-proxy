@@ -78,6 +78,11 @@ describe('the MCP bridge', () => {
     }
     expect(tools.find((t) => t.name === 'create_meeting')?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false })
     expect(tools.some((t) => /account|key|client|setting/i.test(t.name))).toBe(false)
+    // Every tool that changes mail or rules tells the model to ask the user first.
+    for (const tool of tools.filter((t) => t.annotations?.destructiveHint)) {
+      expect(tool.description, tool.name).toMatch(/Confirm with the user first/)
+    }
+    expect(client.getInstructions()).toMatch(/send, archive, delete and move mail/)
   })
 
   it('creates a task in Narsil and returns it as JSON', async () => {

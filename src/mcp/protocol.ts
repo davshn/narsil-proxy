@@ -122,7 +122,7 @@ export const MCP_TOOLS = {
   },
   archive_email: {
     title: 'Archivar correo',
-    description: 'Archives one email from get_inbox, in the account that received it, and removes it from the list.',
+    description: 'Archives one email from get_inbox, in the account that received it, and removes it from the list. Confirm with the user first.',
     input: { key: EmailKey },
     annotations: MAIL_ACTION
   },
@@ -134,15 +134,23 @@ export const MCP_TOOLS = {
   },
   move_email: {
     title: 'Mover correo a una carpeta',
-    description: 'Moves one email from get_inbox to a Gmail label or Outlook folder of the same account. Get folder ids from list_folders.',
+    description: 'Moves one email from get_inbox to a Gmail label or Outlook folder of the same account. Get folder ids from list_folders. Confirm with the user first.',
     input: { key: EmailKey, folderId: FolderId },
     annotations: MAIL_ACTION
   },
   reply_email: {
     title: 'Responder correo',
     description:
-      'Sends a reply to one email from get_inbox, from the account that received it, to its Reply-To address. Use one of the triage reply drafts or the user\'s own words. Show the user the exact text and confirm before sending.',
-    input: { key: EmailKey, body: z.string().trim().min(1).max(50_000).describe('The reply text, in plain text.') },
+      'Sends a reply to one email from get_inbox, from the account that received it, to its Reply-To address. Use one of the triage reply drafts or the user\'s own words. Confirm with the user first, showing the exact text.',
+    input: {
+      key: EmailKey,
+      // Sent exactly as written; only a text that is all blank is refused.
+      body: z
+        .string()
+        .max(50_000)
+        .refine((text) => text.trim() !== '', 'La respuesta está vacía.')
+        .describe('The reply text, in plain text.')
+    },
     annotations: MAIL_ACTION
   },
   create_meeting: {
@@ -160,7 +168,7 @@ export const MCP_TOOLS = {
   create_rule: {
     title: 'Crear regla local',
     description:
-      'Creates an enabled Narsil rule that acts on matching mail of every account as it arrives, and on the current list right away. Conditions are case-insensitive "contains" checks, and at least one is needed. `save` moves the mail to `folder`, which comes from list_folders.',
+      'Creates an enabled Narsil rule that acts on matching mail of every account as it arrives, and on the current list right away. Conditions are case-insensitive "contains" checks, and at least one is needed. `save` moves the mail to `folder`, which comes from list_folders. Confirm with the user first.',
     input: {
       name: RuleName,
       ...CONDITIONS,
@@ -175,7 +183,7 @@ export const MCP_TOOLS = {
   create_server_rule: {
     title: 'Crear regla en Gmail u Outlook',
     description:
-      'Creates a Gmail filter or an Outlook inbox rule in one account, so it runs even while Narsil is closed. Conditions are "contains" checks, and at least one is needed. `move` needs folderId and folderName from list_folders.',
+      'Creates a Gmail filter or an Outlook inbox rule in one account, so it runs even while Narsil is closed. Narsil also applies it to the matching mail in the current list right away. Conditions are "contains" checks, and at least one is needed. `move` needs folderId and folderName from list_folders. Confirm with the user first.',
     input: {
       accountId: AccountId,
       name: RuleName,
