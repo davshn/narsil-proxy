@@ -1084,6 +1084,31 @@ textarea {
   gap: 6px;
 }
 
+/* Listas compartidas: the project fields stack, the actions sit under them on the right. */
+.setup__shared {
+  display: grid;
+  gap: 6px;
+}
+
+.setup__shared input {
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-3);
+  color: var(--text-0);
+}
+
+.setup__shared .setup__actions {
+  justify-content: flex-end;
+}
+
+.step .setup__shared-project,
+.step .setup__shared-user {
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
 .accounts {
   margin: 0 0 10px;
   padding: 0;

@@ -13,6 +13,8 @@ export type SecretName =
   | 'microsoft-client'
   | 'microsoft-cache'
   | `microsoft-account.${string}`
+  /** The Supabase session for shared lists (see app/sharedAuth.ts). */
+  | 'shared-session'
 
 const SAFE_NAME = /^[a-z0-9][a-z0-9.-]*$/i
 const EXTENSION = '.bin'

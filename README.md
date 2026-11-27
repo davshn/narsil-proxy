@@ -196,6 +196,26 @@ Tasks saved before statuses existed keep working: a task marked done becomes **T
 
 Tasks are stored on this computer only, as plain JSON in `%APPDATA%\narsil-proxy\tasks.json`. They are never sent to Claude or to your mail accounts.
 
+### Shared lists (in progress)
+
+Shared lists let Narsil users give each other tasks. They live in a [Supabase](https://supabase.com) project, apart from your personal Pendientes, which stay on this computer. So far Narsil only signs you in; the lists themselves come next.
+
+**One-time setup (the project owner)**
+
+1. In Supabase, create a project. The Free plan is enough. Free projects pause after a week of low activity; resume them from the dashboard.
+2. In Google Cloud Console, create an OAuth client of type **Web application**. Add `https://<project>.supabase.co/auth/v1/callback` as an authorized redirect URI.
+   - While the consent screen is in testing, add every person who will use shared lists under **Google Auth Platform → Audience → Test users**.
+3. In Supabase, open **Authentication → Sign In / Providers → Google**. Turn it on, then paste that client's ID and secret.
+4. In Supabase, open **Authentication → URL Configuration → Redirect URLs** and add exactly `http://127.0.0.1:47813/auth/callback`.
+
+**Signing in (everyone)**
+
+In **Ajustes → Listas compartidas**, paste the project URL and its **public** key (`sb_publishable_…`, or a legacy `anon` key), then choose **Guardar proyecto**. Narsil refuses a secret or `service_role` key, which would give full access.
+
+**Iniciar sesión con Google** opens your browser and comes back to Narsil on port 47813 through OAuth PKCE. If another sign-in holds that port, close it first.
+
+The session is encrypted under `secrets/shared-session.bin` and survives restarts. The project URL and key are saved in `shared.json`. Saving another project signs you out of the previous one.
+
 ### Inbox settings
 
 **Ajustes → Cuentas** (settings, accounts) has two settings for each account:

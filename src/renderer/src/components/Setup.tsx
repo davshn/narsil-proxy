@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { INBOX_WINDOW_DAYS, type Account, type ActionResult, type AccountSettings, type AppStatus, type InboxWindowDays, type ProviderKind } from '@shared/types'
 import { ReconnectNotice } from './ReconnectNotice'
+import { SharedSetup } from './SharedSetup'
 
 interface SetupProps {
   status: AppStatus
@@ -184,6 +185,7 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
             </button>
           </form>
         </li>
+        <SharedSetup />
       </ol>
       {message && (
         <p className="setup__error" role="alert">
