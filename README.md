@@ -198,7 +198,7 @@ Tasks are stored on this computer only, as plain JSON in `%APPDATA%\narsil-proxy
 
 ### Shared lists (in progress)
 
-Shared lists let Narsil users give each other tasks. They live in a [Supabase](https://supabase.com) project, apart from your personal Pendientes, which stay on this computer. So far Narsil only signs you in; the lists themselves come next.
+Shared lists let Narsil users give each other tasks. They live in a [Supabase](https://supabase.com) project, apart from your personal Pendientes, which stay on this computer. So far Narsil signs you in and the database holds the lists and their rules; the screens for them come next.
 
 **One-time setup (the project owner)**
 
@@ -207,6 +207,36 @@ Shared lists let Narsil users give each other tasks. They live in a [Supabase](h
    - While the consent screen is in testing, add every person who will use shared lists under **Google Auth Platform → Audience → Test users**.
 3. In Supabase, open **Authentication → Sign In / Providers → Google**. Turn it on, then paste that client's ID and secret.
 4. In Supabase, open **Authentication → URL Configuration → Redirect URLs** and add exactly `http://127.0.0.1:47813/auth/callback`.
+5. In Supabase, open **Authentication → Sign In / Providers → Email**. Turn off sign-ups with email, because shared lists only use Google, but keep **Confirm email** and **Secure email change** on: membership is checked against the confirmed email.
+6. Create the tables and their rules from `supabase/migrations/`. Use one of these:
+   - **SQL Editor:** paste each file, in order, into the Supabase **SQL Editor** and run it.
+   - **CLI:** run `npx supabase link --project-ref <project>`, then `npx supabase db push`. It asks for your database password.
+
+**How the data is protected**
+
+Every permission is a row level security policy in `supabase/migrations/`, so it holds whatever app or tool calls the database:
+
+- **Invitations are by confirmed email and must be accepted.**
+  - An invited person sees only the list name and who owns it, then accepts or declines.
+  - Until they accept, they see no task or member, and nobody in the list sees their name.
+- **Seeing:** only members who accepted see a list's members, its tasks and each other's names.
+- **Tasks:** any member creates tasks and assigns them, only to members who accepted.
+  - The assignee and the creator change a task: its status, name, description and assignee.
+  - The creator or the list owner deletes a task.
+- **Owner:** a list has exactly one owner. Only the owner invites, removes members, renames or deletes the list, and the owner cannot leave it.
+- **Leaving:** any other member can leave. Removing or leaving deletes the tasks assigned to that person; tasks they created for others stay.
+- **Server-side history:** who changed a task last, and when, always comes from the session and the server clock.
+- **Email changes:** when a person changes their account email, their memberships, pending invitations and assigned tasks move to the new email. Nobody who later signs up with the old email inherits them.
+
+The policies are tested in `supabase/tests/` against a local Supabase in Docker:
+
+```powershell
+npx supabase db start
+```
+
+```powershell
+npx supabase test db
+```
 
 **Signing in (everyone)**
 
