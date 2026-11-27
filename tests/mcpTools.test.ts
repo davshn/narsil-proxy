@@ -213,6 +213,26 @@ describe('meetings and rules through MCP', () => {
     expect(service.createMeeting).toHaveBeenCalledWith('a1', input)
   })
 
+  it('create_meeting passes a weekly series to the service, which plans and checks it', async () => {
+    const { handlers, service } = setup()
+    const input = {
+      title: 'Clase de inglés',
+      start: '2026-12-01T19:00:00-05:00',
+      end: '2026-12-01T20:00:00-05:00',
+      repeat: { days: ['TU', 'TH'], until: '2027-03-16' }
+    }
+    await handlers.create_meeting({ accountId: 'a1', ...input })
+    expect(service.createMeeting).toHaveBeenCalledWith('a1', input)
+  })
+
+  it('create_meeting refuses a series with an unknown day or a badly written end date', async () => {
+    const { handlers, service } = setup()
+    const base = { accountId: 'a1', title: 'Clase', start: '2026-12-01T19:00:00-05:00', end: '2026-12-01T20:00:00-05:00' }
+    await expect(handlers.create_meeting({ ...base, repeat: { days: ['martes'], until: '2027-03-16' } })).rejects.toThrow()
+    await expect(handlers.create_meeting({ ...base, repeat: { days: ['TU'], until: '16/03/2027' } })).rejects.toThrow()
+    expect(service.createMeeting).not.toHaveBeenCalled()
+  })
+
   it('create_rule adds an enabled local rule, with empty conditions left out', async () => {
     const { handlers, service } = setup()
     expect(await handlers.create_rule({ name: 'Boletines', from: 'news@x.com', action: 'archive' })).toEqual({ localRules: [] })

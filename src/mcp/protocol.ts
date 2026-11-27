@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { z } from 'zod'
-import { TASK_STATUSES } from '../shared/types'
+import { TASK_STATUSES, WEEKDAYS } from '../shared/types'
 
 /**
  * Where the running Narsil tells the MCP bridge how to reach it: a per-user folder, so only
@@ -155,13 +155,24 @@ export const MCP_TOOLS = {
   },
   create_meeting: {
     title: 'Crear reunión',
-    description: 'Adds a meeting to the primary calendar of one account. Times are ISO 8601 instants with an offset; the end must be after the start.',
+    description:
+      'Adds a meeting to the primary calendar of one account. Times are ISO 8601 instants with an offset; the end must be after the start. With `repeat` it becomes a weekly series on those days until the end date; if the start date is not one of them, the first meeting moves to the next chosen day.',
     input: {
       accountId: AccountId,
       title: z.string().max(200),
       start: z.string().min(1).max(64),
       end: z.string().min(1).max(64),
-      location: z.string().max(200).optional()
+      location: z.string().max(200).optional(),
+      repeat: z
+        .object({
+          days: z.array(z.enum(WEEKDAYS)).min(1).max(7).describe('Weekdays in calendar codes: MO, TU, WE, TH, FR, SA, SU.'),
+          until: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .describe('Last local date the series may fall on, as YYYY-MM-DD.')
+        })
+        .optional()
+        .describe('Leave out for a single meeting.')
     },
     annotations: { readOnlyHint: false, destructiveHint: false }
   },
