@@ -58,7 +58,10 @@ export function googleRecurrence(repeat: WeeklyRepeat): string[] {
   const until = parseDay(repeat.until)
   if (!until) throw new Error('La fecha final de la repetición no es válida.')
   until.setHours(23, 59, 59, 0)
-  const stamp = until.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+  const stamp = until
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}/, '')
   return [`RRULE:FREQ=WEEKLY;BYDAY=${repeat.days.join(',')};UNTIL=${stamp}`]
 }
 

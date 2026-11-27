@@ -27,8 +27,7 @@ export function filterRequestBody(rule: NewServerRule): gmail_v1.Schema$Filter {
   return { criteria, action }
 }
 
-const same = (ids: string[], expected: string[]): boolean =>
-  ids.length === expected.length && ids.every((id, i) => id === expected[i])
+const same = (ids: string[], expected: string[]): boolean => ids.length === expected.length && ids.every((id, i) => id === expected[i])
 
 /** The rule a Gmail filter is, or a read-only best guess when Narsil never writes that filter. */
 export function filterToServerRule(filter: gmail_v1.Schema$Filter, accountId: string, labels: Map<string, string>): ServerRule | null {

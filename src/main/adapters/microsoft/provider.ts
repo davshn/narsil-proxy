@@ -8,13 +8,7 @@ import {
   type ICachePlugin,
   type InteractiveRequest
 } from '@azure/msal-node'
-import {
-  MEETING_RECONNECT,
-  ReconnectRequiredError,
-  type AccountConnection,
-  type AddedAccount,
-  type ProviderAuth
-} from '../../app/ports'
+import { MEETING_RECONNECT, ReconnectRequiredError, type AccountConnection, type AddedAccount, type ProviderAuth } from '../../app/ports'
 import type { SecretName, SecureStore } from '../secureStore'
 import { GraphClient, type AccessTokenSource } from './graphClient'
 import { OutlookCalendar } from './outlookCalendar'
@@ -226,9 +220,7 @@ export class MicrosoftProvider implements ProviderAuth {
     // Rules need MailboxSettings.ReadWrite and adding meetings Calendars.ReadWrite, which older
     // accounts never granted: ask for them apart, so a missing consent only blocks that feature
     // and never the mail or reading the calendar.
-    const rulesGraph = new GraphClient(() =>
-      this.accessToken(app, homeAccountId, RULES_SCOPES, () => new ReconnectRequiredError())
-    )
+    const rulesGraph = new GraphClient(() => this.accessToken(app, homeAccountId, RULES_SCOPES, () => new ReconnectRequiredError()))
     const meetingsGraph = new GraphClient(() =>
       this.accessToken(app, homeAccountId, MEETING_WRITE_SCOPES, () => new ReconnectRequiredError(MEETING_RECONNECT))
     )

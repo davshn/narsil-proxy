@@ -259,9 +259,7 @@ export class NarsilService {
   }
 
   inboxItems(): InboxItem[] {
-    return [...this.inbox.values()]
-      .map((t) => t.item)
-      .sort((a, b) => b.email.receivedAt.localeCompare(a.email.receivedAt))
+    return [...this.inbox.values()].map((t) => t.item).sort((a, b) => b.email.receivedAt.localeCompare(a.email.receivedAt))
   }
 
   upcomingMeetings(): Meeting[] {
@@ -466,9 +464,7 @@ export class NarsilService {
       enabled: true,
       conditions: rule.conditions,
       action: rule.action === 'move' ? 'save' : rule.action,
-      ...(rule.action === 'move' && rule.folderId
-        ? { folder: { accountId, id: rule.folderId, name: rule.folderName ?? '' } }
-        : {})
+      ...(rule.action === 'move' && rule.folderId ? { folder: { accountId, id: rule.folderId, name: rule.folderName ?? '' } } : {})
     }
     let changed = false
     for (const tracked of [...this.inbox.values()]) {
@@ -868,9 +864,7 @@ export class NarsilService {
       const since = this.firstLoadAt.get(account.id)
       const announced = this.announced.get(account.id)
       const isNews = (parsed: ParsedEmail): boolean =>
-        since !== undefined &&
-        Date.parse(parsed.summary.receivedAt) > since &&
-        !(announced?.has(parsed.summary.id) ?? false)
+        since !== undefined && Date.parse(parsed.summary.receivedAt) > since && !(announced?.has(parsed.summary.id) ?? false)
       const arrived: Tracked[] = []
       const current = new Set(ids.map((id) => itemKey(account.id, id)))
       let changed = false

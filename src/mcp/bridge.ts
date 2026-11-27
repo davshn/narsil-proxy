@@ -15,7 +15,12 @@ export function createBridge(discoveryFile: string): McpServer {
     const spec = MCP_TOOLS[name]
     server.registerTool(
       name,
-      { title: spec.title, description: spec.description, inputSchema: spec.input, annotations: { title: spec.title, ...spec.annotations } },
+      {
+        title: spec.title,
+        description: spec.description,
+        inputSchema: spec.input,
+        annotations: { title: spec.title, ...spec.annotations }
+      },
       async (args: Record<string, unknown> = {}) => {
         try {
           const result = await callNarsil(discoveryFile, name, args)

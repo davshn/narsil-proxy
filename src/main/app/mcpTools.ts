@@ -48,7 +48,12 @@ export function createMcpHandlers({ service, tasks, tasksChanged, shared }: McpT
       parse('get_status', args)
       const status = service.status()
       return {
-        accounts: status.accounts.map((a) => ({ id: a.id, provider: a.provider, email: a.email, needsReconnect: a.needsReconnect ?? false })),
+        accounts: status.accounts.map((a) => ({
+          id: a.id,
+          provider: a.provider,
+          email: a.email,
+          needsReconnect: a.needsReconnect ?? false
+        })),
         canTriage: status.hasAnthropicKey,
         ...(status.lastError ? { lastError: status.lastError } : {})
       }

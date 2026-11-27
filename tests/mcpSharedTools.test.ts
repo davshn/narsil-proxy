@@ -165,12 +165,16 @@ describe('list and member tools', () => {
 
 describe('save_shared_task', () => {
   it('adds a task assigned by email, and answers with the new task', async () => {
-    const created = task({ id: '44444444-4444-4444-8444-444444444444', name: 'Barrer', description: '', assigneeEmail: LUISA.email, updatedBy: ANA.id })
+    const created = task({
+      id: '44444444-4444-4444-8444-444444444444',
+      name: 'Barrer',
+      description: '',
+      assigneeEmail: LUISA.email,
+      updatedBy: ANA.id
+    })
     const { handlers, actions } = setup({ after: snapshot([task(), created]) })
     const result = await handlers.save_shared_task({ listId: CASA, name: 'Barrer', assignee: 'Luisa@gmail.com' })
-    expect(actions).toEqual([
-      { type: 'saveTask', task: { listId: CASA, name: 'Barrer', description: '', assigneeEmail: LUISA.email } }
-    ])
+    expect(actions).toEqual([{ type: 'saveTask', task: { listId: CASA, name: 'Barrer', description: '', assigneeEmail: LUISA.email } }])
     expect(result).toMatchObject({ id: created.id, name: 'Barrer', assignee: { email: LUISA.email } })
   })
 

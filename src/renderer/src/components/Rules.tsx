@@ -1,13 +1,5 @@
 import { useEffect, useState } from 'react'
-import type {
-  Account,
-  AccountRules,
-  Rule,
-  RuleActivity,
-  ServerRule,
-  ServerRuleAction,
-  ServerRuleInput
-} from '@shared/types'
+import type { Account, AccountRules, Rule, RuleActivity, ServerRule, ServerRuleAction, ServerRuleInput } from '@shared/types'
 import { describeConditions, describeRuleAction, describeServerRuleAction } from '@shared/rules'
 import { FolderPicker } from './FolderPicker'
 import { ReconnectNotice } from './ReconnectNotice'
@@ -126,8 +118,8 @@ export function Rules({ rules, serverRules, activity, accounts, incomingDraft, o
         >
           <h3>{draft.id ? 'Editar regla' : 'Nueva regla'}</h3>
           <p className="rule-form__hint">
-            Se guarda en la cuenta y funciona aunque tu equipo esté apagado. Al crearla, también se aplica a los correos de esa
-            cuenta que ya están en la lista. Deben cumplirse todas las condiciones que llenes.
+            Se guarda en la cuenta y funciona aunque tu equipo esté apagado. Al crearla, también se aplica a los correos de esa cuenta que
+            ya están en la lista. Deben cumplirse todas las condiciones que llenes.
           </p>
           <label>
             Cuenta
@@ -269,8 +261,8 @@ export function Rules({ rules, serverRules, activity, accounts, incomingDraft, o
                               className="link-btn link-btn--danger"
                               disabled={busy}
                               onClick={() =>
-                                void act(() => window.narsil.deleteServerRule(rule.accountId, rule.id), setListError).then(
-                                  () => setConfirmDelete(null)
+                                void act(() => window.narsil.deleteServerRule(rule.accountId, rule.id), setListError).then(() =>
+                                  setConfirmDelete(null)
                                 )
                               }
                             >
@@ -395,9 +387,7 @@ export function Rules({ rules, serverRules, activity, accounts, incomingDraft, o
           <ul className="activity">
             {activity.map((entry) => (
               <li key={entry.id} className={entry.error ? 'activity__item activity__item--error' : 'activity__item'}>
-                <time dateTime={entry.at}>
-                  {new Date(entry.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </time>
+                <time dateTime={entry.at}>{new Date(entry.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
                 <span>
                   <strong>{entry.ruleName}</strong> {entry.error ? failed(entry) : done(entry)} “{entry.subject}”
                   {entry.error && <span className="activity__error">: {entry.error}</span>}

@@ -13,7 +13,12 @@ const api = vi.hoisted(() => ({
     },
     labels: {
       list: vi.fn(async (_params: unknown) => ({
-        data: { labels: [{ id: 'Label_1', name: 'Compras', type: 'user' }, { id: 'INBOX', name: 'INBOX', type: 'system' }] }
+        data: {
+          labels: [
+            { id: 'Label_1', name: 'Compras', type: 'user' },
+            { id: 'INBOX', name: 'INBOX', type: 'system' }
+          ]
+        }
       }))
     }
   }
@@ -34,8 +39,14 @@ beforeEach(() => {
 
 describe('Gmail filter request bodies', () => {
   it.each<[NewServerRule, unknown]>([
-    [{ name: 'a', conditions: when, action: 'archive' }, { criteria: { from: 'shop.example' }, action: { removeLabelIds: ['INBOX'] } }],
-    [{ name: 'd', conditions: when, action: 'delete' }, { criteria: { from: 'shop.example' }, action: { addLabelIds: ['TRASH'] } }],
+    [
+      { name: 'a', conditions: when, action: 'archive' },
+      { criteria: { from: 'shop.example' }, action: { removeLabelIds: ['INBOX'] } }
+    ],
+    [
+      { name: 'd', conditions: when, action: 'delete' },
+      { criteria: { from: 'shop.example' }, action: { addLabelIds: ['TRASH'] } }
+    ],
     [
       { name: 'm', conditions: when, action: 'move', folderId: 'Label_1', folderName: 'Compras' },
       { criteria: { from: 'shop.example' }, action: { addLabelIds: ['Label_1'], removeLabelIds: ['INBOX'] } }
@@ -154,7 +165,10 @@ describe('Gmail missing rule permission', () => {
 
   it('turns a 403 insufficient scope into ReconnectRequiredError', async () => {
     api.users.settings.filters.list.mockRejectedValueOnce(
-      Object.assign(new Error('Request had insufficient authentication scopes.'), { code: 403, errors: [{ reason: 'insufficientPermissions' }] })
+      Object.assign(new Error('Request had insufficient authentication scopes.'), {
+        code: 403,
+        errors: [{ reason: 'insufficientPermissions' }]
+      })
     )
     await expect(rules().list()).rejects.toBeInstanceOf(ReconnectRequiredError)
   })

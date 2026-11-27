@@ -142,9 +142,7 @@ export function MeetingForm({ accounts, onCancel, onCreated }: MeetingFormProps)
             Hasta
             <input type="date" value={until} min={date} onChange={(e) => setUntil(e.target.value)} />
           </label>
-          <p className="meeting-form__hint">
-            Si la fecha no cae en uno de estos días, la primera reunión será el siguiente día elegido.
-          </p>
+          <p className="meeting-form__hint">Si la fecha no cae en uno de estos días, la primera reunión será el siguiente día elegido.</p>
         </fieldset>
       )}
       <label>

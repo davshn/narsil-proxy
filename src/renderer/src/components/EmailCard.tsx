@@ -39,14 +39,7 @@ function senderName(from: string): string {
   return match?.[1] ?? from
 }
 
-export function EmailCard({
-  item,
-  accountLabel,
-  highlighted = false,
-  onAction,
-  onReply,
-  onCreateRule
-}: EmailCardProps): React.JSX.Element {
+export function EmailCard({ item, accountLabel, highlighted = false, onAction, onReply, onCreateRule }: EmailCardProps): React.JSX.Element {
   const { email, triage } = item
   const [draft, setDraft] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)

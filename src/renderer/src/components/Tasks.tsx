@@ -82,9 +82,7 @@ export function Tasks({ tasks, onResult }: TasksProps): React.JSX.Element {
           <section key={group.project} className="tasks__group" aria-label={label(group.project)}>
             <h3 className="tasks__project">
               {label(group.project)}
-              <span className="tasks__count">
-                {group.pending === 0 ? 'todo terminado' : `${group.pending} sin terminar`}
-              </span>
+              <span className="tasks__count">{group.pending === 0 ? 'todo terminado' : `${group.pending} sin terminar`}</span>
             </h3>
             <ul className="tasks">
               {group.tasks.map((task) => (

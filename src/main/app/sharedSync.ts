@@ -1,12 +1,5 @@
 import { z } from 'zod'
-import {
-  TASK_STATUSES,
-  type SharedList,
-  type SharedPerson,
-  type SharedSnapshot,
-  type SharedState,
-  type SharedTask
-} from '@shared/types'
+import { TASK_STATUSES, type SharedList, type SharedPerson, type SharedSnapshot, type SharedState, type SharedTask } from '@shared/types'
 import type { SharedSession, SharedTable } from './sharedAuth'
 
 /** How often Narsil reads the shared lists (decision D5: polling, not Supabase Realtime). */

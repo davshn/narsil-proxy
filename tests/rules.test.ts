@@ -181,9 +181,7 @@ describe('server rules', () => {
     expect(() => normalizeServerRule({ name: 'x', conditions: { from: ' ', subject: '', body: '' }, action: 'delete' })).toThrow(
       'Agrega al menos una condición.'
     )
-    expect(() => normalizeServerRule({ name: 'x', conditions, action: 'move' })).toThrow(
-      'Elige la carpeta donde se guardan estos correos.'
-    )
+    expect(() => normalizeServerRule({ name: 'x', conditions, action: 'move' })).toThrow('Elige la carpeta donde se guardan estos correos.')
   })
 
   it('drafts a server rule from an email on that email account', () => {

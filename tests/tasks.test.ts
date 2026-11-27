@@ -32,7 +32,7 @@ describe('TaskList.save', () => {
       name: 'Revisar contrato',
       description: 'Ver cláusula 4',
       project: 'Tenzor',
-      status: "todo",
+      status: 'todo',
       createdAt: '2026-11-26T12:00:00.000Z'
     }
     expect(result).toEqual([expected])
@@ -108,7 +108,14 @@ describe('TaskList.setStatus and remove', () => {
 
 describe('TaskList.list', () => {
   it('reads the stored tasks once', () => {
-    const stored: PendingTask = { id: 'x', name: 'Guardada', description: '', project: 'P', status: 'todo', createdAt: '2026-11-01T00:00:00.000Z' }
+    const stored: PendingTask = {
+      id: 'x',
+      name: 'Guardada',
+      description: '',
+      project: 'P',
+      status: 'todo',
+      createdAt: '2026-11-01T00:00:00.000Z'
+    }
     const repo = new MemoryRepo([stored])
     const { tasks } = list(repo)
     expect(tasks.list()).toEqual([stored])

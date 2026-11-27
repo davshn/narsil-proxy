@@ -69,13 +69,7 @@ function listOut(snapshot: SharedSnapshot, list: SharedList): Record<string, unk
 }
 
 /** Compares names the way people type them: no case, no accents, single spaces. */
-const fold = (text: string): string =>
-  text
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, ' ')
+const fold = (text: string): string => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim().replace(/\s+/g, ' ')
 
 /**
  * The email of the accepted member `query` names: their email, their full name or their first

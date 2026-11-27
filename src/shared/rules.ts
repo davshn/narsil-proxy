@@ -1,13 +1,4 @@
-import type {
-  NewServerRule,
-  Rule,
-  RuleAction,
-  RuleConditions,
-  RuleFolder,
-  RuleInput,
-  ServerRuleAction,
-  ServerRuleInput
-} from './types'
+import type { NewServerRule, Rule, RuleAction, RuleConditions, RuleFolder, RuleInput, ServerRuleAction, ServerRuleInput } from './types'
 
 /** Pure rule and folder logic shared by the main process (matching) and the renderer (drafts). */
 

@@ -40,10 +40,7 @@ interface Session {
 export type SharedTable = 'profiles' | 'lists' | 'list_members' | 'shared_tasks'
 
 /** Reads every row of a table the signed-in user may see, as PostgREST answers. */
-export type SelectRows = (
-  table: SharedTable,
-  columns: string
-) => Promise<{ data: unknown[] | null; error: { message: string } | null }>
+export type SelectRows = (table: SharedTable, columns: string) => Promise<{ data: unknown[] | null; error: { message: string } | null }>
 
 type Row = Record<string, string | null>
 
@@ -187,7 +184,12 @@ export class SharedAuth {
     if (error) throw new Error(error.message)
     const user = data.session?.user
     if (!user?.email) return null
-    return { id: user.id, email: user.email.toLowerCase(), select: (table, columns) => auth.select(table, columns), write: (write) => auth.write(write) }
+    return {
+      id: user.id,
+      email: user.email.toLowerCase(),
+      select: (table, columns) => auth.select(table, columns),
+      write: (write) => auth.write(write)
+    }
   }
 
   /** Saves the project; a session from another project means nothing here, so it is dropped. */

@@ -1,5 +1,13 @@
 import { useState } from 'react'
-import { INBOX_WINDOW_DAYS, type Account, type ActionResult, type AccountSettings, type AppStatus, type InboxWindowDays, type ProviderKind } from '@shared/types'
+import {
+  INBOX_WINDOW_DAYS,
+  type Account,
+  type ActionResult,
+  type AccountSettings,
+  type AppStatus,
+  type InboxWindowDays,
+  type ProviderKind
+} from '@shared/types'
 import { ReconnectNotice } from './ReconnectNotice'
 import { SharedSetup } from './SharedSetup'
 
@@ -51,15 +59,13 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
 
   return (
     <section className="setup" aria-label="Ajustes">
-      <p className="setup__intro">
-        Configura Google, Microsoft o ambos, agrega tus cuentas y guarda tu API key de Anthropic.
-      </p>
+      <p className="setup__intro">Configura Google, Microsoft o ambos, agrega tus cuentas y guarda tu API key de Anthropic.</p>
       <ol className="setup__steps">
         <li className={status.hasGoogleClient ? 'step step--done' : 'step'}>
           <h3>Archivo de cliente de Google</h3>
           <p>
-            Para cuentas de Gmail: el JSON del cliente OAuth tipo “App de escritorio” de tu proyecto de Google Cloud. El
-            README explica cómo obtenerlo.
+            Para cuentas de Gmail: el JSON del cliente OAuth tipo “App de escritorio” de tu proyecto de Google Cloud. El README explica cómo
+            obtenerlo.
           </p>
           <button
             type="button"
@@ -73,8 +79,8 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
         <li className={status.hasMicrosoftClient ? 'step step--done' : 'step'}>
           <h3>ID de aplicación de Microsoft</h3>
           <p>
-            Para cuentas de Outlook, Hotmail o Microsoft 365: el ID de aplicación (cliente) de tu registro en Microsoft
-            Entra. El README explica cómo obtenerlo.
+            Para cuentas de Outlook, Hotmail o Microsoft 365: el ID de aplicación (cliente) de tu registro en Microsoft Entra. El README
+            explica cómo obtenerlo.
           </p>
           <form
             className="setup__key"
@@ -89,7 +95,9 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
               type="text"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              placeholder={status.hasMicrosoftClient ? 'ID guardado. Pega uno nuevo para reemplazarlo' : '00000000-0000-0000-0000-000000000000'}
+              placeholder={
+                status.hasMicrosoftClient ? 'ID guardado. Pega uno nuevo para reemplazarlo' : '00000000-0000-0000-0000-000000000000'
+              }
               aria-label="ID de aplicación (cliente) de Microsoft"
               autoComplete="off"
               spellCheck={false}
@@ -102,8 +110,7 @@ export function Setup({ status }: SetupProps): React.JSX.Element {
         <li className={status.accounts.length > 0 ? 'step step--done' : 'step'}>
           <h3>Cuentas</h3>
           <p>
-            Tu navegador se abre para que autorices a Narsil a leer tu correo, actuar sobre él, administrar sus reglas y leer tu
-            calendario.
+            Tu navegador se abre para que autorices a Narsil a leer tu correo, actuar sobre él, administrar sus reglas y leer tu calendario.
           </p>
           {status.accounts.length === 0 ? (
             <p className="accounts__empty">Aún no has agregado ninguna cuenta.</p>

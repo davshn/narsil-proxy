@@ -183,7 +183,13 @@ class FakeProvider implements ProviderAuth {
         createEvent: async (input) => {
           box.createdEvents.push(input)
           if (box.createEventError) throw box.createEventError
-          const meeting: Meeting = { id: `${accountId}:ev${box.createdEvents.length}`, accountId, title: input.title, start: input.start, end: input.end }
+          const meeting: Meeting = {
+            id: `${accountId}:ev${box.createdEvents.length}`,
+            accountId,
+            title: input.title,
+            start: input.start,
+            end: input.end
+          }
           if (input.location) meeting.location = input.location
           box.meetings = [...box.meetings, meeting]
           return meeting
@@ -300,7 +306,12 @@ describe('NarsilService inbox polling', () => {
     await service.refresh()
 
     expect(service.status().lastError).toBeUndefined()
-    expect(service.inboxItems().map((i) => i.email.id).sort()).toEqual(['bad', 'good', 'older'])
+    expect(
+      service
+        .inboxItems()
+        .map((i) => i.email.id)
+        .sort()
+    ).toEqual(['bad', 'good', 'older'])
     expect(service.inboxItems().every((i) => i.triage !== null)).toBe(true)
   })
 
@@ -501,9 +512,7 @@ describe('NarsilService with several accounts', () => {
     const { service, microsoft } = await makeService()
     microsoft.configured = false
 
-    await expect(service.addAccount('microsoft')).rejects.toThrow(
-      'Primero guarda el ID de aplicación (cliente) de Microsoft.'
-    )
+    await expect(service.addAccount('microsoft')).rejects.toThrow('Primero guarda el ID de aplicación (cliente) de Microsoft.')
     expect(microsoft.addAccount).not.toHaveBeenCalled()
   })
 
@@ -544,9 +553,7 @@ describe('NarsilService startup errors', () => {
         if (fail) throw new Error('offline')
       }
     })
-    expect(service.status().lastError).toBe(
-      'No se pudo migrar tu cuenta de Google anterior (se reintentará al reiniciar): offline'
-    )
+    expect(service.status().lastError).toBe('No se pudo migrar tu cuenta de Google anterior (se reintentará al reiniciar): offline')
 
     fail = false
     await service.init()
@@ -634,7 +641,12 @@ describe('NarsilService rules', () => {
     await service.refresh()
     expect(service.inboxItems()).toHaveLength(1)
 
-    await service.saveRule({ name: 'Promos', enabled: true, action: 'archive', conditions: { from: 'shop.example', subject: '', body: '' } })
+    await service.saveRule({
+      name: 'Promos',
+      enabled: true,
+      action: 'archive',
+      conditions: { from: 'shop.example', subject: '', body: '' }
+    })
 
     expect(box.archive).toHaveBeenCalledWith('promo')
     expect(service.inboxItems()).toEqual([])
@@ -825,9 +837,7 @@ describe('NarsilService change check', () => {
     box.token = 't1'
     await tick(15_000)
     expect(box.listed).toBe(2)
-    expect(service.status().lastError).toBe(
-      'ana@gmail.com: no se pudieron leer 1 correo(s); se reintentará en la próxima revisión.'
-    )
+    expect(service.status().lastError).toBe('ana@gmail.com: no se pudieron leer 1 correo(s); se reintentará en la próxima revisión.')
 
     box.badIds.clear()
     await tick(15_000)
@@ -1172,9 +1182,7 @@ describe('NarsilService server rules', () => {
 
   it('lists the rules of every account, and creates a rule only on the account it names', async () => {
     const { service, google, events } = await makeService({ accounts: [ANA, BETO] })
-    google.box('g1').serverRules = [
-      { id: 'f1', accountId: 'g1', name: 'x', conditions: shop, action: 'archive', managedByNarsil: true }
-    ]
+    google.box('g1').serverRules = [{ id: 'f1', accountId: 'g1', name: 'x', conditions: shop, action: 'archive', managedByNarsil: true }]
     await service.loadServerRules()
     expect(service.serverRules().map((a) => [a.accountId, a.rules.map((r) => r.id), a.loaded])).toEqual([
       ['g1', ['f1'], true],
@@ -1185,7 +1193,12 @@ describe('NarsilService server rules', () => {
 
     expect(google.box('g2').createRule).toHaveBeenCalledWith({ name: 'Tienda', conditions: shop, action: 'delete' })
     expect(google.box('g1').createRule).not.toHaveBeenCalled()
-    expect(service.serverRules().find((a) => a.accountId === 'g2')?.rules.map((r) => r.name)).toEqual(['Tienda'])
+    expect(
+      service
+        .serverRules()
+        .find((a) => a.accountId === 'g2')
+        ?.rules.map((r) => r.name)
+    ).toEqual(['Tienda'])
     expect(events.serverRulesChanged).toHaveBeenCalled()
   })
 
@@ -1252,7 +1265,9 @@ describe('NarsilService server rules', () => {
     box.senders.promo = 'promo@shop.example'
     fake.triage.mockResolvedValue(TRIAGE)
     await service.refresh()
-    box.serverRules = [{ id: 'f1', accountId: 'g1', name: 'Apagada', conditions: shop, action: 'archive', enabled: false, managedByNarsil: true }]
+    box.serverRules = [
+      { id: 'f1', accountId: 'g1', name: 'Apagada', conditions: shop, action: 'archive', enabled: false, managedByNarsil: true }
+    ]
     await service.loadServerRules()
 
     await service.saveServerRule({ id: 'f1', accountId: 'g1', name: 'Apagada', conditions: shop, action: 'delete' })
@@ -1287,11 +1302,23 @@ describe('NarsilService server rules', () => {
     fake.triage.mockResolvedValue(TRIAGE)
     await service.refresh()
 
-    await service.saveServerRule({ accountId: 'g1', name: 'Tienda', conditions: shop, action: 'move', folderId: 'Label_1', folderName: 'Compras' })
+    await service.saveServerRule({
+      accountId: 'g1',
+      name: 'Tienda',
+      conditions: shop,
+      action: 'move',
+      folderId: 'Label_1',
+      folderName: 'Compras'
+    })
 
     expect(google.box('g1').moveToFolder).toHaveBeenCalledWith('promo', 'Label_1')
     expect(google.box('g2').moveToFolder).not.toHaveBeenCalled()
-    expect(service.inboxItems().map((i) => i.key).sort()).toEqual(['g1:ana', 'g2:promo2'])
+    expect(
+      service
+        .inboxItems()
+        .map((i) => i.key)
+        .sort()
+    ).toEqual(['g1:ana', 'g2:promo2'])
     expect(service.ruleActivity()).toMatchObject([{ ruleName: 'Tienda', action: 'save', folderName: 'Compras', subject: 'Asunto promo' }])
   })
 
